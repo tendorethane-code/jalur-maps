@@ -304,7 +304,15 @@ async function chooseGooglePlace(field, it) {
 }
 
 for (const field of ['from', 'to']) {
-  els[field].addEventListener('focus', () => { closePreview(); state.activeField = field; els[field].select(); onInput(field); });
+  // Focus shows the basic choices (GPS, pick on map, recent). Searching starts only once the
+  // rider types: otherwise focusing "Lokasi kamu" sent "Lokasi kamu" to Google as a search.
+  els[field].addEventListener('focus', () => {
+    closePreview();
+    state.activeField = field;
+    els[field].select();
+    searchAbort?.abort();
+    showSuggestions(baseSuggestions(field));
+  });
   els[field].addEventListener('input', () => onInput(field));
   els[field].addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && suggestionItems.length) {
