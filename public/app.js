@@ -322,8 +322,18 @@ els.suggestions.addEventListener('pointerdown', (e) => {
   // Stop here: choosing can replace the list, and the document handler below would then see
   // a detached target, think the tap was outside the search card, and close everything.
   e.stopPropagation();
+  swallowNextClick();
   chooseSuggestion(Number(b.dataset.i));
 });
+
+// We act on pointerdown, so the list is gone before the finger lifts. The browser then sends
+// the tap's click to whatever moved under the finger. On the owner's phone that was the
+// "Pakai peta cadangan" button, which silently switched maps. Eat that one click.
+function swallowNextClick() {
+  const eat = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+  document.addEventListener('click', eat, { capture: true, once: true });
+  setTimeout(() => document.removeEventListener('click', eat, { capture: true }), 700);
+}
 els.suggestions.addEventListener('keydown', (e) => {
   const b = e.target.closest('button[data-i]');
   if (b && e.key === 'Enter') { e.preventDefault(); chooseSuggestion(Number(b.dataset.i)); }
@@ -362,6 +372,7 @@ async function placeAt(field, point) {
   if (name && state[field]?.point === point) {
     Object.assign(state[field], name);
     els[field].value = name.main;
+    session.save();
     if (field === 'to') rememberRecent(state[field]);
     if (state.routes.length) renderDetail();
   }
@@ -374,7 +385,7 @@ map.onClick((point) => {
   placeAt(field, point);
 });
 // Long-press (or right-click) anywhere sets the destination.
-map.onLongPress((point) => { stopPicking(); closePreview(); placeAt('to', point); });
+map.onLongPress((point) => { swallowNextClick(); stopPicking(); closePreview(); placeAt('to', point); });
 
 /* ---------- routing ---------- */
 function maybeRoute() {

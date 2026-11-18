@@ -48,6 +48,16 @@ challenge weak assumptions and say plainly when something is unverified.
   a 400 there is expected and the candidate is dropped.
 - "Hati-hati di sini" = `junctions()`: Valhalla maneuvers 9/16 (bear), 17–25 (ramp/exit/keep/merge),
   26 roundabout, 12/13 U-turn; flyover/underpass from `edge.bridge`/`edge.tunnel`. Plain turns left out.
+- Ghost taps: suggestions are chosen on pointerdown, so the list is gone before the finger lifts
+  and the browser clicks whatever moved underneath. That silently hit "Pakai peta cadangan" on the
+  owner's phone. `swallowNextClick()` eats that click (also after a long-press). Reproduce taps in
+  Playwright with CDP touchStart, ~110 ms wait, touchEnd: `page.tap()` sends both at once and hides it.
+- Long-press = pointer events on the map element (`watchLongPress` in map.js). Google's map events
+  never reported a held finger on touch. Drags >10 px and second fingers cancel it.
+- QA scripts that drove all main flows with finger-like taps lived in the session scratchpad; the
+  checklist is: Google engine + full-height canvas, Google search -> routes, bubble/card select,
+  junction preview next/prev/close, swap (origin appears in Maps link), long-press, pick on map,
+  sheet handle, reload keeps trip, 320 px and desktop without horizontal scroll, OSM fallback.
 - With a GPS start the Maps link omits `origin` so Google uses its live location.
 - Search (`lib/search.js` + `searchPlaces`): expand "Jl./Gg./Jend." (Photon finds nothing for "Gg."),
   strip "No. 6"/RT/RW, rerank by distance from the GPS fix, dedupe street pieces. Nominatim
@@ -66,8 +76,8 @@ challenge weak assumptions and say plainly when something is unverified.
   Valhalla motorcycle speeds look pessimistic for Tangerang roads. Don't present minutes as exact.
 - Google map + Places search shipped (owner set up Google Cloud, Rp500k prepayment requirement for
   their card). First phone test: map blank (0 px bug above, fixed). Still to confirm on the phone:
-  long-press sets the destination; whether the jump to OSM the owner saw was them tapping the
-  fallback button or `gm_authFailure`. The trip now survives that reload (sessionStorage).
+  long-press on the real phone. The jump to OSM the owner saw was the ghost tap above (reproduced
+  on the old build, fixed). The trip survives a reload (sessionStorage).
   Did the owner set the daily quotas (step 6)?
 - Is the OSM road-size classification right on the owner's usual routes?
 - Search is weaker than Google's: OSM lacks many POIs and house numbers. Owner's report: a full

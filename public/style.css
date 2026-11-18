@@ -204,6 +204,8 @@ body.picking .sheet, body.previewing .sheet { transform: translateY(105%); }
   background: var(--surface); color: var(--ink); box-shadow: var(--shadow-2);
   padding: 8px 8px 8px 14px; border-radius: 999px; font-size: 14px; font-weight: 600;
 }
+/* Never sit where a suggestion was a moment ago. */
+body:has(.suggestions:not([hidden])) .map-notice { display: none; }
 .map-notice button { border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); padding: 7px 12px; font-weight: 700; }
 
 /* ---------- Bottom sheet ---------- */

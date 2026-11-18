@@ -10,6 +10,38 @@
 const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min';
 const NO_GOOGLE_KEY = 'jalur.noGoogleUntil';
 
+/**
+ * Long-press straight from pointer events on the map element, the same for both engines.
+ * Google's own map events don't report a held finger reliably (tested: never fired on a touch
+ * phone). One finger, held 550 ms without moving more than 10 px; a second finger (pinch)
+ * cancels. Right-click on desktop counts too. toLatLng(x, y) gets element-relative pixels.
+ */
+function watchLongPress(el, toLatLng, fn) {
+  let timer = null, start = null, last = 0;
+  const cancel = () => { clearTimeout(timer); timer = null; start = null; };
+  const fire = (x, y) => {
+    if (Date.now() - last < 800) return;
+    const point = toLatLng(x, y);
+    if (!point) return;
+    last = Date.now();
+    navigator.vibrate?.(15);
+    fn(point);
+  };
+  const local = (e) => { const r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  el.addEventListener('pointerdown', (e) => {
+    cancel();
+    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    start = { x: e.clientX, y: e.clientY };
+    const [x, y] = local(e);
+    timer = setTimeout(() => { timer = null; fire(x, y); }, 550);
+  }, true);
+  el.addEventListener('pointermove', (e) => {
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel();
+  }, true);
+  for (const ev of ['pointerup', 'pointercancel']) el.addEventListener(ev, cancel, true);
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); cancel(); fire(...local(e)); }, true);
+}
+
 /* ---------------- Google ---------------- */
 
 function loadGoogleScript(key) {
@@ -82,13 +114,14 @@ async function googleMap(el, opts) {
     },
     onClick(fn) { map.addListener('click', (e) => e.latLng && fn(pt(e.latLng))); },
     onLongPress(fn) {
-      // Touch long-press: mousedown held still for 550 ms. Right-click on desktop.
-      let timer = null, last = 0;
-      const fire = (latLng) => { if (Date.now() - last > 800) { last = Date.now(); fn(pt(latLng)); } };
-      const cancel = () => { clearTimeout(timer); timer = null; };
-      map.addListener('mousedown', (e) => { cancel(); if (e.latLng) timer = setTimeout(() => fire(e.latLng), 550); });
-      for (const ev of ['mouseup', 'dragstart', 'zoom_changed', 'drag']) map.addListener(ev, cancel);
-      map.addListener('contextmenu', (e) => { cancel(); if (e.latLng) fire(e.latLng); });
+      // A blank overlay only to get the projection: screen pixels -> lat/lng.
+      const overlay = new google.maps.OverlayView();
+      overlay.onAdd = overlay.draw = overlay.onRemove = () => {};
+      overlay.setMap(map);
+      watchLongPress(el, (x, y) => {
+        const proj = overlay.getProjection();
+        return proj ? pt(proj.fromContainerPixelToLatLng(new google.maps.Point(x, y))) : null;
+      }, fn);
     },
     layer() {
       let items = [];
@@ -158,7 +191,9 @@ async function leafletMap(el, { center, zoom }) {
       map.flyTo(target, z, { duration: 0.7 });
     },
     onClick(fn) { map.on('click', (e) => fn([e.latlng.lat, e.latlng.lng])); },
-    onLongPress(fn) { map.on('contextmenu', (e) => fn([e.latlng.lat, e.latlng.lng])); },
+    onLongPress(fn) {
+      watchLongPress(el, (x, y) => { const c = map.containerPointToLatLng([x, y]); return [c.lat, c.lng]; }, fn);
+    },
     layer() {
       const group = L.layerGroup().addTo(map);
       return {
