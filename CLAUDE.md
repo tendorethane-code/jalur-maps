@@ -41,8 +41,15 @@ challenge weak assumptions and say plainly when something is unverified.
   ambiguous ("Indomaret, Tangerang").
 
 ## Open questions (verify on a real phone and real routes)
-- Verified on the owner's Android: the link opens Google Maps in "Motor" mode with "3 perhentian".
-  Still unknown: does Google keep to our roads between the waypoints?
+- Verified on the owner's Android: the link opens Google Maps in "Motor" mode with "3 perhentian",
+  and Google follows our route: Tangerang -> Living World Alam Sutera, Jalur 12,5 km / 16,0 km vs
+  Google 13 km / 16 km for the same two routes. Watch for small loops near a waypoint (one showed up
+  near stop A); unconfirmed whether it is a detour.
+- Jalur's minutes are far too slow there: 40 / 48 min vs Google 24 / 26 min (normal traffic).
+  Valhalla motorcycle speeds look pessimistic for Tangerang roads. Don't present minutes as exact.
+- Owner wants place search "sama kayak GMaps". Real fix = Google Places Autocomplete (needs the
+  owner's Google Cloud billing + a referrer-restricted key). Places policy: results shown on a map
+  must be on a Google Map, so that also means switching the base map. Waiting on the owner's choice.
 - Is the OSM road-size classification right on the owner's usual routes?
 - Search is weaker than Google's: OSM lacks many POIs and house numbers. Owner's report: a full
   address with "No. 6" found nothing. Fixed what's fixable; the share target covers the rest.
