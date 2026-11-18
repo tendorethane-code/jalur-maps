@@ -1,8 +1,10 @@
 # Jalur (jalur-maps)
 
-Personal motorbike route chooser for Jabodetabek. Compares routes by road size
-(gede/sedang/kecil), shows main streets, plus-minus and the junctions where riders take
-the wrong branch, then opens the chosen route in Google Maps via 3 waypoints.
+Personal route chooser for Jabodetabek, motorbike and car (Motor/Mobil switch). Compares routes by road size
+(gede/sedang/kecil) and, for cars, toll vs no toll; shows main streets, plus-minus and the
+junctions where riders take the wrong branch, then opens the chosen route in Google Maps via 3
+waypoints. Walking was asked for and deliberately left out: road size, gangs, tolls and forks
+don't matter on foot, and Google Maps already walks fine. Add it only if the owner really uses it.
 Static web app/PWA: no build step, no dependencies. Google Maps + Places (New) with the owner's
 browser key in `public/config.js`; OpenStreetMap fallback when Google fails.
 
@@ -58,6 +60,22 @@ challenge weak assumptions and say plainly when something is unverified.
   (the ghost tap), see `test/e2e/README.md`. Run them after UI changes. The checklist is: Google engine + full-height canvas, Google search -> routes, bubble/card select,
   junction preview next/prev/close, swap (origin appears in Maps link), long-press, pick on map,
   sheet handle, reload keeps trip, 320 px and desktop without horizontal scroll, OSM fallback.
+- Modes (`MODES` in route-analysis.js): motor = Valhalla `motorcycle` (never uses tolls) + the
+  bicycle small-roads trick; mobil = `auto` with tolls (+2 alts), `exclude_tolls` (+1 alt) and
+  shortest. Best of each first so the 4-route cut keeps a toll and a no-toll option. `edge.toll`
+  gives `tollKm`, "Lewat tol"/"Tanpa tol" tags (only when there is a choice), "masuk/keluar tol"
+  junction notes. Maps link `travelmode=driving`; Maps URLs can't say "avoid tolls", so a no-toll
+  route relies on its waypoints. Mode is kept in localStorage `jalur.mode`.
+- "Jalan gede"/"Banyak gang" tags only when the gap is real (>= 8 points big road, >= 10% small).
+- Google Maps puts touch listeners on the whole document; after a long-press on the map it
+  preventDefault-ed the next touch anywhere, so the first tap on a field or button did nothing.
+  map.js stops touches that start outside `#map` at window capture before Google loads.
+- fitRoute fits all routes (+32 px for bubbles): fitting only the selected one left another
+  route's bubble under the search card.
+- Valhalla's public server answers 429 to bursts (seen after many test runs): `post()` retries
+  twice with backoff, then says the server is busy in plain words.
+- **Google quota:** a day of repeated Google QA runs used up the owner's Maps JS daily quota; the
+  live app fell back to OSM until the reset (~15:00 WIB). Run `qa.cjs --osm` by default.
 - With a GPS start the Maps link omits `origin` so Google uses its live location.
 - Search (`lib/search.js` + `searchPlaces`): expand "Jl./Gg./Jend." (Photon finds nothing for "Gg."),
   strip "No. 6"/RT/RW, rerank by distance from the GPS fix, dedupe street pieces. Nominatim

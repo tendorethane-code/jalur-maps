@@ -1,7 +1,13 @@
 // QA pass over Jalur's main flows with finger-like taps (down, pause, up) on an emulated phone.
 const { chromium, devices } = require('playwright');
 const OUT = require('path').join(process.env.OUT || require('os').tmpdir(), 'jalur-qa-');
-const URL = process.argv[2] || 'http://localhost:5173/';
+// Usage: node test/e2e/qa.cjs [url] [--osm]
+// --osm blocks Google so the run uses the OpenStreetMap fallback. Each Google run loads the
+// Google map ~10 times and runs several Places searches: that is the owner's daily quota
+// (one day of heavy testing used it all up). Use --osm by default; run Google only to check it.
+const OSM = process.argv.includes('--osm');
+const URL = process.argv.slice(2).find((a) => !a.startsWith('--')) || 'http://localhost:5173/';
+const noGoogle = async (ctx) => { if (OSM) await ctx.route(/googleapis\.com\/(maps|v1)|maps\.googleapis|places\.googleapis/, (r) => r.abort()); };
 const results = [];
 const check = (name, ok, detail = '') => { results.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); };
 
@@ -18,10 +24,11 @@ const gmaps = (p) => p.$eval('.go', (a) => Object.fromEntries(new URL(a.href).se
 (async () => {
   const b = await chromium.launch({ proxy: { server: process.env.HTTPS_PROXY, bypass: 'localhost,127.0.0.1' } });
   const ctx = await b.newContext({ ...devices['Pixel 7'], geolocation: { latitude: -6.2445, longitude: 106.6283 }, permissions: ['geolocation'], colorScheme: 'dark' });
+  await noGoogle(ctx);
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(e.message));
-  p.on('console', (m) => m.type() === 'error' && !/trace_route|400/.test(m.text()) && errors.push(m.text().slice(0, 150)));
+  p.on('console', (m) => m.type() === 'error' && !/trace_route|400|429|ERR_FAILED|Google Maps unavailable/.test(m.text()) && errors.push(m.text().slice(0, 150)));
   let navs = 0;
   p.on('framenavigated', (f) => { if (f === p.mainFrame()) navs++; });
   const cdp = await ctx.newCDPSession(p);
@@ -29,8 +36,9 @@ const gmaps = (p) => p.$eval('.go', (a) => Object.fromEntries(new URL(a.href).se
   await p.goto(URL);
   await p.waitForFunction(() => document.getElementById('from').value === 'Lokasi kamu', null, { timeout: 25000 });
   await p.waitForTimeout(2500);
-  check('Google map engine', (await p.evaluate(() => document.body.dataset.map)) === 'google');
+  check(OSM ? 'OSM fallback engine' : 'Google map engine', (await p.evaluate(() => document.body.dataset.map)) === (OSM ? 'osm' : 'google'));
   check('Map canvas full height', (await p.$eval('.map-canvas', (e) => e.offsetHeight)) > 700);
+  if (OSM) errors.length = 0; // the blocked Google script logs a load error by design
 
   // 1. Destination through Google search with a finger tap
   await tapSel(p, cdp, '#to');
@@ -128,9 +136,52 @@ const gmaps = (p) => p.$eval('.go', (a) => Object.fromEntries(new URL(a.href).se
   await p.screenshot({ path: OUT + '3-end.png' });
   await ctx.close();
 
-  // 10. Small phone + desktop layouts
+  // 10. Car mode: Karawaci -> Kuningan City has a toll and a no-toll option
+  {
+    const c3 = await b.newContext({ ...devices['Pixel 7'], geolocation: { latitude: -6.2307, longitude: 106.6057 }, permissions: ['geolocation'] });
+    await noGoogle(c3);
+    const q = await c3.newPage();
+    const qcdp = await c3.newCDPSession(q);
+    const qerr = [];
+    q.on('pageerror', (e) => qerr.push(e.message));
+    await q.goto(URL);
+    await q.waitForFunction(() => document.getElementById('from').value === 'Lokasi kamu', null, { timeout: 25000 });
+    await tapSel(q, qcdp, '#to');
+    await q.fill('#to', 'kuningan city');
+    await waitResults(q, 'Kuningan City');
+    await tapSel(q, qcdp, '#suggestions button[data-i="0"]');
+    await q.waitForSelector('.rcard', { timeout: 40000 });
+    const motorText = await q.$$eval('.rcard', (cs) => cs.map((c) => c.innerText).join(' '));
+    check('Motor: no toll tags', !/tol/i.test(motorText));
+    await tapSel(q, qcdp, '#modes [data-mode="mobil"]');
+    await q.waitForFunction(() => document.querySelector('#modes [data-mode="mobil"]').getAttribute('aria-checked') === 'true' && document.querySelectorAll('.rcard').length > 0 && !document.querySelector('.skeleton'), null, { timeout: 40000 });
+    await q.waitForTimeout(2000);
+    const carText = await q.$$eval('.rcard', (cs) => cs.map((c) => c.innerText).join(' | '));
+    check('Mobil: toll and no-toll routes offered', /Lewat tol/.test(carText) && /Tanpa tol/.test(carText), carText.replace(/\n/g, ' ').slice(0, 160));
+    check('Mobil: Maps link drives', (await gmaps(q)).travelmode === 'driving');
+    await q.screenshot({ path: OUT + '5-car.png' });
+    const tollIdx = await q.$$eval('.rcard', (cs) => cs.findIndex((c) => /Lewat tol/.test(c.innerText)));
+    await tapSel(q, qcdp, `.rcard[data-i="${tollIdx}"]`);
+    await q.waitForTimeout(800);
+    const pm = await q.$eval('.pm', (e) => e.innerText);
+    check('Mobil: toll route lists "Bayar tol"', /Bayar tol/.test(pm));
+    const notes = await q.$$eval('.j-note', (ns) => ns.map((n) => n.textContent));
+    check('Mobil: junctions mark "masuk tol"', notes.includes('masuk tol'), notes.join(', '));
+    await q.reload();
+    await q.waitForSelector('.rcard', { timeout: 40000 });
+    check('Mobil: mode survives reload', (await q.$eval('#modes [data-mode="mobil"]', (e) => e.getAttribute('aria-checked'))) === 'true');
+    await tapSel(q, qcdp, '#modes [data-mode="motor"]');
+    await q.waitForFunction(() => document.querySelector('#modes [data-mode="motor"]').getAttribute('aria-checked') === 'true' && document.querySelectorAll('.rcard').length > 0 && !document.querySelector('.skeleton'), null, { timeout: 40000 });
+    await q.waitForTimeout(1500);
+    check('Back to motor: two-wheeler link', (await gmaps(q)).travelmode === 'two-wheeler');
+    check('Car flow: no page errors', qerr.length === 0, qerr.join(' | '));
+    await c3.close();
+  }
+
+  // 11. Small phone + desktop layouts
   for (const [name, vp] of [['320', { width: 320, height: 640 }], ['desktop', { width: 1280, height: 800 }]]) {
     const c2 = await b.newContext({ viewport: vp, geolocation: { latitude: -6.2445, longitude: 106.6283 }, permissions: ['geolocation'] });
+    await noGoogle(c2);
     const q = await c2.newPage();
     await q.goto(URL);
     await q.waitForFunction(() => document.getElementById('from').value === 'Lokasi kamu', null, { timeout: 25000 });

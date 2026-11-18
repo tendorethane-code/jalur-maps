@@ -1,7 +1,7 @@
 {
-  "name": "Jalur: pilih rute motor",
+  "name": "Jalur: pilih rute motor & mobil",
   "short_name": "Jalur",
-  "description": "Pilih rute motor sebelum berangkat: jalan gede atau jalan tikus, lalu buka di Google Maps.",
+  "description": "Pilih rute motor atau mobil sebelum berangkat: jalan gede, jalan tikus, tol atau tanpa tol, lalu buka di Google Maps.",
   "lang": "id",
   "start_url": "./",
   "scope": "./",

@@ -3,7 +3,7 @@
 **Buka app-nya:** https://tendorethane-code.github.io/jalur-maps/
 (di HP: buka di Chrome → menu ⋮ → *Tambahkan ke layar utama*)
 
-Pemilih rute motor buat Jabodetabek. Masalah yang mau diberesin: Google Maps suka
+Pemilih rute motor dan mobil buat Jabodetabek. Masalah yang mau diberesin: Google Maps suka
 nyeret motor ke jalan tikus, dan kita baru sadar pas udah jalan.
 
 Jalur nunjukin **2–4 pilihan rute sebelum berangkat**, masing-masing dengan:

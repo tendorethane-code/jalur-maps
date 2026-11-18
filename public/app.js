@@ -3,7 +3,7 @@
 // All route maths lives in lib/route-analysis.js; network calls in lib/api.js.
 import { findRoutes, searchPlaces, searchPlacesDeep, reverse } from './lib/api.js';
 import { parseShared, parseCoordinates, formatDistance } from './lib/search.js';
-import { prosCons, googleMapsUrl, formatKm } from './lib/route-analysis.js';
+import { prosCons, googleMapsUrl, formatKm, MODES } from './lib/route-analysis.js';
 import { createMap, useFallbackMap, useGoogleMap } from './lib/map.js';
 import { googleSuggest, googleResolve } from './lib/google-places.js';
 import { GOOGLE } from './config.js';
@@ -23,6 +23,7 @@ const state = {
   picking: null, // 'from' | 'to' while choosing on the map
   previewAt: null, // junction index while previewing
   gps: null, // last GPS fix, used to rank nearby search results first
+  mode: 'motor', // 'motor' | 'mobil'; set from storage below
   routeAbort: null,
   routeError: null,
   loading: false,
@@ -62,6 +63,8 @@ const ICON = {
   prev: svg(stroke('m15 6-6 6 6 6'), 16),
   next: svg(stroke('m9 6 6 6-6 6'), 16),
   go: svg('<path d="M3 11.5 21 3l-8.5 18-2-7.5z" fill="currentColor"/>', 18),
+  toll: svg(stroke('M4 20V9l8-5 8 5v11M4 13h16M9 20v-4h6v4'), 13),
+  noToll: svg(stroke('M4 20V9l8-5 8 5v11M4 4l16 16'), 13),
 };
 // Junction arrows: one arrow rotated by side, plus special shapes for U-turn and roundabout.
 function junctionIcon(side, size = 18) {
@@ -130,14 +133,19 @@ function drawRoutes(fit = true) {
     const html = `<div class="bubble${i === state.selected ? ' sel' : ''}">${r.minutes} mnt<i>${formatKm(r.km)}</i></div>`;
     labelLayer.html(r.labelAt, html, { zIndex: i === state.selected ? 1000 : 500, onClick: () => select(i) });
   });
-  if (fit) fitRoute(sel);
+  if (fit) fitRoute();
 }
 
-function fitRoute(route) {
-  const top = els.search.getBoundingClientRect().bottom + 16;
-  const bottom = isWide() ? 24 : els.sheet.getBoundingClientRect().height + 16;
-  map.fitPoints(route.shape, {
-    top: isWide() ? 24 : top, left: isWide() ? 430 : 28, right: isWide() ? 40 : 28, bottom,
+// Fit every route, not just the selected one, so each route's time bubble is on screen and
+// tappable. The extra 32 px keeps bubbles (drawn centred on the line) clear of the search card
+// and the sheet; without it a bubble at the top edge sat under the search card.
+function fitRoute() {
+  const BUBBLE = 32;
+  const top = els.search.getBoundingClientRect().bottom + 12 + BUBBLE;
+  const bottom = (isWide() ? 24 : els.sheet.getBoundingClientRect().height + 12) + BUBBLE;
+  const points = state.routes.flatMap((r) => r.shape.filter((_, i) => i % 4 === 0).concat([r.labelAt]));
+  map.fitPoints(points, {
+    top: isWide() ? 24 + BUBBLE : top, left: isWide() ? 430 : 40, right: isWide() ? 40 : 40, bottom,
   });
 }
 
@@ -156,7 +164,8 @@ function setPlace(field, place) {
   els[field].value = place ? place.main : '';
   session.save();
   drawMarkers();
-  if (field === 'to' && place) rememberRecent(place);
+  // "Titik di peta" is a placeholder until its name comes back; placeAt remembers it then.
+  if (field === 'to' && place && place.main !== 'Titik di peta') rememberRecent(place);
   maybeRoute();
 }
 
@@ -359,6 +368,20 @@ els.swap.addEventListener('click', () => {
   maybeRoute();
 });
 
+/* ---------- vehicle ---------- */
+const modeButtons = [...document.querySelectorAll('#modes [data-mode]')];
+function setMode(mode, { recompute = true } = {}) {
+  if (!MODES[mode]) mode = 'motor';
+  state.mode = mode;
+  store.set('jalur.mode', mode);
+  for (const b of modeButtons) b.setAttribute('aria-checked', String(b.dataset.mode === mode));
+  if (recompute) maybeRoute();
+}
+for (const b of modeButtons) {
+  b.addEventListener('click', () => { if (b.dataset.mode !== state.mode) setMode(b.dataset.mode); });
+}
+setMode(store.get('jalur.mode', 'motor'), { recompute: false });
+
 /* ---------- pick on map ---------- */
 function startPicking(field) {
   closePreview();
@@ -414,7 +437,7 @@ async function computeRoutes() {
   state.routeError = null;
   render();
   try {
-    const routes = await findRoutes(state.from.point, state.to.point, { signal: ctrl.signal });
+    const routes = await findRoutes(state.from.point, state.to.point, { signal: ctrl.signal, mode: state.mode });
     if (ctrl.signal.aborted) return;
     state.routes = routes;
     state.selected = 0;
@@ -449,15 +472,24 @@ const TAGS = {
   terpendek: ['Terpendek', '', ICON.ruler],
   'jalan gede': ['Jalan gede', 'gede', ICON.road],
   'banyak gang': ['Banyak gang', 'gang', ICON.alley],
+  'lewat tol': ['Lewat tol', 'tol', ICON.toll],
+  'tanpa tol': ['Tanpa tol', 'plain', ICON.noToll],
   alternatif: ['Alternatif', 'plain', ICON.fork],
 };
+const tagInfo = (key) => (key === 'banyak gang' && state.mode === 'mobil'
+  ? ['Banyak jalan kecil', 'gang', ICON.alley]
+  : TAGS[key]);
+const tagChip = ([label, cls, icon]) => `<span class="tag ${cls}">${icon}${label}</span>`;
+const TOLL_TAGS = ['lewat tol', 'tanpa tol'];
 
 function routeCard(r, i) {
-  const t = TAGS[r.tags[0] || 'alternatif'];
+  // Card: the main tag, plus the toll tag for cars (the first thing a driver wants to know).
+  const main0 = r.tags.find((k) => !TOLL_TAGS.includes(k)) || 'alternatif';
+  const toll = r.tags.find((k) => TOLL_TAGS.includes(k));
   const main = [...r.streets].filter((s) => !s.name.startsWith('(')).sort((a, b) => b.km - a.km)[0];
   const bar = ['gede', 'sedang', 'kecil'].filter((g) => r.pct[g] > 0).map((g) => `<span class="${g}" style="width:${r.pct[g]}%"></span>`).join('');
   return `<button type="button" class="rcard${i === state.selected ? ' sel' : ''}" data-i="${i}" aria-pressed="${i === state.selected}">
-    <span class="tag ${t[1]}">${t[2]}${t[0]}</span>
+    <span class="rtags">${tagChip(tagInfo(main0))}${toll ? tagChip(tagInfo(toll)) : ''}</span>
     <span class="rtime">${r.minutes}<small>mnt · ${formatKm(r.km)}</small></span>
     <span class="bar" aria-label="${r.pct.gede}% jalan gede, ${r.pct.sedang}% sedang, ${r.pct.kecil}% kecil">${bar}</span>
     <span class="rvia">${main ? `via <b>${esc(main.name)}</b>` : '&nbsp;'}</span>
@@ -465,9 +497,9 @@ function routeCard(r, i) {
 }
 
 function detailHtml(r) {
-  const { plus, minus } = prosCons(r, state.routes);
-  const extraTags = r.tags.slice(1).map((k) => TAGS[k]).filter(Boolean)
-    .map(([label, cls, icon]) => `<span class="tag ${cls}">${icon}${label}</span>`).join(' ');
+  const { plus, minus } = prosCons(r, state.routes, state.mode);
+  const shown = [r.tags.find((k) => !TOLL_TAGS.includes(k)), r.tags.find((k) => TOLL_TAGS.includes(k))];
+  const extraTags = r.tags.filter((k) => !shown.includes(k)).map(tagInfo).filter(Boolean).map(tagChip).join(' ');
   const pm = [...plus.map((t) => ['plus', t]), ...minus.map((t) => ['minus', t])]
     .map(([k, t]) => `<li class="${k}"><span class="ic">${ICON[k]}</span><span>${esc(t)}</span></li>`).join('');
   const junctions = r.junctions.length
@@ -503,7 +535,7 @@ function renderDetail() {
   const box = els.body.querySelector('.detail');
   if (!r || !box) return;
   box.innerHTML = detailHtml(r);
-  const url = googleMapsUrl(state.from.gps ? null : state.from.point, state.to.point, r.waypoints);
+  const url = googleMapsUrl(state.from.gps ? null : state.from.point, state.to.point, r.waypoints, state.mode);
   els.cta.innerHTML = `<a class="go" href="${esc(url)}" target="_blank" rel="noopener">${ICON.go}Mulai di Google Maps</a>
     <p class="cta-note">Rute dikirim lewat ${r.waypoints.length} titik singgah · tinggal tekan <b>Mulai</b> di sana</p>`;
   els.cta.hidden = false;
@@ -618,7 +650,7 @@ function closePreview() {
   document.body.classList.remove('previewing');
   previewLayer.clear();
   const r = state.routes[state.selected];
-  if (r) setTimeout(() => fitRoute(r), 300);
+  if (r) setTimeout(() => fitRoute(), 300);
 }
 
 els.preview.addEventListener('click', (e) => {

@@ -6,10 +6,15 @@ the Google key only accepts `http://localhost:5173` and the github.io site.
 
 ```bash
 npm run dev &                                  # http://localhost:5173
-node test/e2e/qa.cjs                           # all main flows, prints PASS/FAIL per check
+node test/e2e/qa.cjs --osm                     # all main flows on the OSM fallback (no Google quota)
+node test/e2e/qa.cjs                           # same on Google: ~10 map loads + Places searches
 node test/e2e/qa.cjs https://tendorethane-code.github.io/jalur-maps/   # the live site
 node test/e2e/ghost.cjs                        # the "jumped to the fallback map" ghost tap
 ```
 
 Screenshots go to `$OUT` (default: the OS temp dir). In the agent sandbox, launch Chromium
 with the proxy (already done in the scripts).
+
+**Google quota:** every Google run spends the owner's Maps JS and Places daily quota. A day of
+repeated runs used it all up once (the live app then fell back to OSM until the reset, about
+15:00 WIB). Default to `--osm`; run on Google once at the end to confirm.

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   groupOf, decodePolyline, analyzeRoute, mainStreets, stretches, dedupe, tagRoutes,
-  prosCons, pickWaypoints, googleMapsUrl, shortName, formatKm, junctions, labelPoint,
+  prosCons, pickWaypoints, googleMapsUrl, shortName, formatKm, junctions, labelPoint, analyzeRoute as analyze,
 } from '../public/lib/route-analysis.js';
 
 // Real Valhalla responses: motorcycle, Tebet -> Kemang (recorded 2026-11-18).
@@ -157,4 +157,57 @@ test('googleMapsUrl leaves out origin when starting from GPS', () => {
   const url = new URL(googleMapsUrl(null, [-6.2607, 106.8135]));
   assert.equal(url.searchParams.has('origin'), false);
   assert.equal(url.searchParams.get('destination'), '-6.260700,106.813500');
+});
+
+test('cars: toll routes are tagged only when there is a choice', () => {
+  const toll = fake({ minutes: 54, km: 33, tollKm: 26.5, pct: { gede: 88, sedang: 10, kecil: 2 } });
+  const free = fake({ minutes: 108, km: 40.4, tollKm: 0, pct: { gede: 89, sedang: 9, kecil: 2 } });
+  tagRoutes([toll, free], 'mobil');
+  assert.ok(toll.tags.includes('lewat tol'));
+  assert.ok(free.tags.includes('tanpa tol'));
+  // 88% vs 89% big road is noise: no "jalan gede" / "banyak gang" tags.
+  assert.ok(!toll.tags.includes('jalan gede') && !free.tags.includes('jalan gede'));
+  assert.ok(!toll.tags.includes('banyak gang') && !free.tags.includes('banyak gang'));
+  // All on the toll road: nothing to choose, no toll tags. Motorbikes never get them.
+  const a = fake({ tollKm: 20 }), b = fake({ tollKm: 22, minutes: 35 });
+  tagRoutes([a, b], 'mobil');
+  assert.ok(!a.tags.some((t) => t.includes('tol')) && !b.tags.some((t) => t.includes('tol')));
+  tagRoutes([toll, free], 'motor');
+  assert.ok(!toll.tags.some((t) => t.includes('tol')));
+});
+
+test('cars: pros and cons talk about tolls and narrow roads', () => {
+  const toll = fake({ minutes: 54, km: 33, tollKm: 26.5, pct: { gede: 88, sedang: 10, kecil: 2 }, gangCount: 1, longestGangKm: 0.4 });
+  const free = fake({ minutes: 108, km: 40.4, tollKm: 0, pct: { gede: 60, sedang: 18, kecil: 22 }, gangCount: 2, longestGangKm: 0.2 });
+  const t = prosCons(toll, [toll, free], 'mobil');
+  const f = prosCons(free, [toll, free], 'mobil');
+  assert.ok(t.plus.some((x) => x.includes('Lewat tol 26,5 km')));
+  assert.ok(t.minus.includes('Bayar tol'));
+  assert.ok(t.minus.some((x) => x.includes('jalan sempit sepanjang 400 m')));
+  assert.ok(f.plus.includes('Gak bayar tol'));
+  assert.ok(f.minus.some((x) => x.includes('mobil bisa susah papasan')));
+  // The motorbike wording is unchanged.
+  assert.ok(!prosCons(free, [toll, free], 'motor').minus.some((x) => x.includes('mobil')));
+});
+
+test('toll km and "masuk tol" come from edge.toll', () => {
+  const trip = { summary: { time: 600, length: 3 }, legs: [{ maneuvers: [
+    { type: 1, begin_shape_index: 0, length: 1 },
+    { type: 23, begin_shape_index: 2, length: 2, street_names: ['Jalan Tol Jakarta-Tangerang'], instruction: 'Keep right to take the ramp.' },
+    { type: 4, begin_shape_index: 4, length: 0 },
+  ] }] };
+  const edges = [
+    { begin_shape_index: 0, end_shape_index: 2, length: 1, road_class: 'primary', use: 'road', way_id: 1 },
+    { begin_shape_index: 2, end_shape_index: 4, length: 2, road_class: 'motorway', use: 'road', way_id: 2, toll: true },
+  ];
+  // shape "_ibE_ibE..." is irrelevant here; build a tiny straight one
+  const shape = '_p~iF~ps|U_ulLnnqC_mqNvxq`@_ulLnnqC';
+  const a = analyze(trip, { edges, shape });
+  assert.equal(a.tollKm, 2);
+  assert.deepEqual(a.junctions[0].notes, ['masuk tol']);
+});
+
+test('googleMapsUrl uses driving for cars', () => {
+  assert.equal(new URL(googleMapsUrl(null, [-6.2, 106.8], [], 'mobil')).searchParams.get('travelmode'), 'driving');
+  assert.equal(new URL(googleMapsUrl(null, [-6.2, 106.8])).searchParams.get('travelmode'), 'two-wheeler');
 });

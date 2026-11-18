@@ -22,6 +22,7 @@
   --warn-soft: #fdebdc;
   --danger: #b3261e;
 
+  --tol: #7c4ddb;
   --gede: #2f6fe4;
   --sedang: #10a18a;
   --kecil: #f07a2c;
@@ -47,7 +48,7 @@
     --ink: #eceef3; --ink-2: #c9cdd6; --muted: #9aa1ae; --line: #2e333e;
     --accent: #8b85ff; --accent-2: #b08cff; --accent-soft: #2b2a52; --accent-ink: #c8c5ff; --on-accent: #12141a;
     --good: #6fd39f; --good-soft: #1c3329; --warn: #f2a46f; --warn-soft: #3a2a1f; --danger: #ff8a80;
-    --gede: #5d95ff; --sedang: #33c9ad; --kecil: #ff9c55; --other: #6c7383; --casing: #0e1015;
+    --gede: #5d95ff; --sedang: #33c9ad; --kecil: #ff9c55; --tol: #b49aff; --other: #6c7383; --casing: #0e1015;
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
     --shadow-2: 0 10px 40px rgba(0, 0, 0, 0.55);
     color-scheme: dark;
@@ -58,7 +59,7 @@
   --ink: #eceef3; --ink-2: #c9cdd6; --muted: #9aa1ae; --line: #2e333e;
   --accent: #8b85ff; --accent-2: #b08cff; --accent-soft: #2b2a52; --accent-ink: #c8c5ff; --on-accent: #12141a;
   --good: #6fd39f; --good-soft: #1c3329; --warn: #f2a46f; --warn-soft: #3a2a1f; --danger: #ff8a80;
-  --gede: #5d95ff; --sedang: #33c9ad; --kecil: #ff9c55; --other: #6c7383; --casing: #0e1015;
+  --gede: #5d95ff; --sedang: #33c9ad; --kecil: #ff9c55; --tol: #b49aff; --other: #6c7383; --casing: #0e1015;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 10px 40px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
@@ -162,6 +163,17 @@ svg { flex: none; }
 }
 .swap:active { transform: rotate(180deg); transition: transform 0.2s; }
 
+/* Vehicle switch: a small segmented control under the two fields. */
+.modes {
+  grid-column: 2 / -1; display: flex; gap: 6px; margin: 6px 0 2px;
+}
+.modes button {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 0; border-radius: 999px; padding: 6px 12px 6px 10px;
+  background: var(--sunken); color: var(--muted); font-size: 13.5px; font-weight: 600;
+}
+.modes button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+.modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .suggestions {
   grid-column: 1 / -1;
   list-style: none; margin: 8px -2px 2px -6px; padding: 6px 0 0;
@@ -294,6 +306,8 @@ body:has(.suggestions:not([hidden])) .map-notice { display: none; }
 .tag.gede { background: color-mix(in srgb, var(--gede) 15%, transparent); color: var(--gede); }
 .tag.gang { background: color-mix(in srgb, var(--kecil) 17%, transparent); color: var(--kecil); }
 .tag.plain { background: var(--line); color: var(--ink-2); }
+.tag.tol { background: color-mix(in srgb, var(--tol) 16%, transparent); color: var(--tol); }
+.rtags { display: flex; flex-wrap: wrap; gap: 4px; }
 .rtime { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; }
 .rtime small { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
 .bar { display: flex; height: 7px; border-radius: 4px; overflow: hidden; gap: 2px; }

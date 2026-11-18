@@ -8,6 +8,19 @@
 // point inside a 0x0 box, so their own CSS decides the anchor (translate(-50%,-50%) = centred).
 
 const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min';
+
+// Google Maps listens to touches on the whole document, not just the map. After a long-press
+// on the map it cancelled the next touch anywhere (preventDefault on touchstart), so the first
+// tap on a search field or button afterwards did nothing. Touches that start outside the map
+// are Jalur's own UI: keep them away from Google's page-wide handlers. Registered on window in
+// the capture phase before Google loads, so it runs first. Default actions (focus, click) and
+// Jalur's own pointer/click handlers are unaffected.
+for (const type of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
+  window.addEventListener(type, (e) => {
+    const map = document.getElementById('map');
+    if (map && e.target instanceof Node && !map.contains(e.target)) e.stopImmediatePropagation();
+  }, { capture: true, passive: true });
+}
 const NO_GOOGLE_KEY = 'jalur.noGoogleUntil';
 
 /**

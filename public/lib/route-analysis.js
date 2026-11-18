@@ -2,6 +2,12 @@
 // Input is what Valhalla returns: a /route trip (time, distance, maneuvers) and a
 // /trace_attributes result for the same geometry (one entry per road edge).
 
+/** Travel modes: Valhalla costing and Google Maps travelmode. */
+export const MODES = {
+  motor: { label: 'Motor', costing: 'motorcycle', google: 'two-wheeler' },
+  mobil: { label: 'Mobil', costing: 'auto', google: 'driving' },
+};
+
 /** Road size groups shown to the rider. */
 export const GROUPS = {
   gede: { label: 'Jalan gede', short: 'Gede' },
@@ -148,6 +154,8 @@ export function junctions(trip, edges, shape) {
       if (next?.bridge && !prev?.bridge) notes.push('naik flyover');
       else if (prev?.bridge && !next?.bridge) notes.push('turun dari flyover');
       if (next?.tunnel && !prev?.tunnel) notes.push('masuk underpass');
+      if (next?.toll && !prev?.toll) notes.push('masuk tol');
+      else if (prev?.toll && !next?.toll) notes.push('keluar tol');
       if (next && groupOf(next) === 'kecil' && prev && groupOf(prev) !== 'kecil') notes.push('masuk jalan kecil');
       out.push({
         side,
@@ -171,10 +179,11 @@ export function junctions(trip, edges, shape) {
 export function analyzeRoute(trip, trace) {
   const edges = trace.edges;
   const km = { gede: 0, sedang: 0, kecil: 0 };
-  let unpavedKm = 0;
+  let unpavedKm = 0, tollKm = 0;
   for (const e of edges) {
     km[groupOf(e)] += e.length;
     if (UNPAVED.has(e.surface)) unpavedKm += e.length;
+    if (e.toll) tollKm += e.length;
   }
   const total = km.gede + km.sedang + km.kecil || 1;
   const pct = {
@@ -200,6 +209,7 @@ export function analyzeRoute(trip, trace) {
     gangCount: gangs.length,
     longestGangKm: gangs.reduce((m, s) => Math.max(m, s.km), 0),
     unpavedKm,
+    tollKm,
     turns: maneuvers.filter((m) => TURN_TYPES.has(m.type)).length,
     uturns: maneuvers.filter((m) => UTURN_TYPES.has(m.type)).length,
     streets: mainStreets(edges),
@@ -233,7 +243,7 @@ export function dedupe(routes, threshold = 0.85) {
  * Tag routes (mutates): fastest, shortest, most big road, most small road.
  * A tag is only given when it actually tells routes apart.
  */
-export function tagRoutes(routes) {
+export function tagRoutes(routes, mode = 'motor') {
   for (const r of routes) r.tags = [];
   if (!routes.length) return routes;
   const by = (fn) => routes.reduce((best, r) => (fn(r) > fn(best) ? r : best));
@@ -243,17 +253,26 @@ export function tagRoutes(routes) {
     if (!shortest.tags.includes('tercepat')) shortest.tags.push('terpendek');
     const big = by((r) => r.pct.gede);
     const small = by((r) => r.pct.kecil);
-    if (big !== small) {
+    // Only when it tells routes apart: 89% vs 88% big road, or 5% small road, is noise.
+    if (big !== small && big.pct.gede - small.pct.gede >= 8) {
       big.tags.push('jalan gede');
-      small.tags.push('banyak gang');
+      if (small.pct.kecil >= 10) small.tags.push('banyak gang');
+    }
+    // Cars: say which routes use the toll road, but only when there is a choice.
+    if (mode === 'mobil') {
+      const toll = routes.filter((r) => r.tollKm >= 1);
+      if (toll.length && toll.length < routes.length) {
+        for (const r of routes) r.tags.push(r.tollKm >= 1 ? 'lewat tol' : 'tanpa tol');
+      }
     }
   }
   return routes;
 }
 
 /** Plus/minus notes in plain Indonesian, relative to the other routes. */
-export function prosCons(route, routes) {
+export function prosCons(route, routes, mode = 'motor') {
   const plus = [], minus = [];
+  const car = mode === 'mobil';
   const fastest = Math.min(...routes.map((r) => r.minutes));
   const shortest = Math.min(...routes.map((r) => r.km));
   const extraMin = route.minutes - fastest;
@@ -265,12 +284,23 @@ export function prosCons(route, routes) {
   } else if (route.pct.gede >= 45) {
     plus.push('Campuran, tapi lebih banyak jalan gede');
   }
-  if (route.pct.kecil >= 35) {
-    minus.push(`Banyak jalan kecil (${route.pct.kecil}%), rawan bingung & papasan`);
+  if (car && route.tollKm >= 1) {
+    plus.push(`Lewat tol ${formatKm(route.tollKm)}, biasanya lebih lancar`);
+    minus.push('Bayar tol');
+  } else if (car && routes.some((r) => r.tollKm >= 1)) {
+    plus.push('Gak bayar tol');
+  }
+  // Small roads hurt more in a car (passing, parking), so the car warns earlier.
+  if (route.pct.kecil >= (car ? 20 : 35)) {
+    minus.push(car
+      ? `Banyak jalan kecil (${route.pct.kecil}%), mobil bisa susah papasan`
+      : `Banyak jalan kecil (${route.pct.kecil}%), rawan bingung & papasan`);
     plus.push('Bisa ngehindarin macet jalan raya');
   }
-  if (route.gangCount === 0) plus.push('Gak ada gang panjang');
-  else if (route.longestGangKm >= 0.5) minus.push(`Ada gang sepanjang ${formatKm(route.longestGangKm)}`);
+  if (route.gangCount === 0) plus.push(car ? 'Gak ada jalan sempit panjang' : 'Gak ada gang panjang');
+  else if (route.longestGangKm >= (car ? 0.3 : 0.5)) {
+    minus.push(`Ada ${car ? 'jalan sempit' : 'gang'} sepanjang ${formatKm(route.longestGangKm)}`);
+  }
   if (route.uturns) minus.push(`${route.uturns}× putar balik`);
   if (route.unpavedKm >= 0.2) minus.push(`${formatKm(route.unpavedKm)} jalan belum diaspal (menurut peta)`);
   if (extraMin >= 2) minus.push(`+${extraMin} menit dari yang tercepat`);
@@ -323,11 +353,11 @@ const fmt = ([lat, lon]) => `${lat.toFixed(6)},${lon.toFixed(6)}`;
  * Pass origin = null when starting from the rider's own location: Google then uses
  * its live GPS fix, so "Mulai" starts navigation instead of a preview from a fixed point.
  */
-export function googleMapsUrl(origin, destination, waypoints = []) {
+export function googleMapsUrl(origin, destination, waypoints = [], mode = 'motor') {
   const p = new URLSearchParams({ api: '1' });
   if (origin) p.set('origin', fmt(origin));
   p.set('destination', fmt(destination));
-  p.set('travelmode', 'two-wheeler');
+  p.set('travelmode', (MODES[mode] || MODES.motor).google);
   if (waypoints.length) p.set('waypoints', waypoints.map(fmt).join('|'));
   return `https://www.google.com/maps/dir/?${p.toString()}`;
 }

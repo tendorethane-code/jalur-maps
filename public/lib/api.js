@@ -1,6 +1,6 @@
 // Network calls: Valhalla (routing, FOSSGIS public server) and Photon (place search).
 // Both are free public services run by volunteers; keep requests few and polite.
-import { analyzeRoute, dedupe, tagRoutes, pickWaypoints, labelPoint } from './route-analysis.js';
+import { analyzeRoute, dedupe, tagRoutes, pickWaypoints, labelPoint, MODES } from './route-analysis.js';
 import { normalizeQuery, stripAddressDetails, parseCoordinates, rankPlaces } from './search.js';
 
 const VALHALLA = 'https://valhalla1.openstreetmap.de';
@@ -12,12 +12,17 @@ const BBOX = '106.35,-6.75,107.35,-5.95';
 const TRACE_ATTRS = [
   'shape', 'edge.road_class', 'edge.use', 'edge.length', 'edge.surface',
   'edge.names', 'edge.way_id', 'edge.begin_shape_index', 'edge.end_shape_index',
-  'edge.bridge', 'edge.tunnel',
+  'edge.bridge', 'edge.tunnel', 'edge.toll',
 ];
 
 export class RouteError extends Error {}
 
-async function post(path, body, signal) {
+const wait = (ms, signal) => new Promise((resolve, reject) => {
+  const t = setTimeout(resolve, ms);
+  signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('aborted', 'AbortError')); }, { once: true });
+});
+
+async function post(path, body, signal, attempt = 0) {
   let res;
   try {
     res = await fetch(VALHALLA + path, {
@@ -30,9 +35,16 @@ async function post(path, body, signal) {
     if (err.name === 'AbortError') throw err;
     throw new RouteError('Gak bisa nyambung ke server rute. Cek internet kamu.');
   }
+  // The free public server rate-limits bursts (429). Back off and try again a couple of times.
+  if (res.status === 429 && attempt < 2) {
+    await wait(1500 * (attempt + 1), signal);
+    return post(path, body, signal, attempt + 1);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const e = new RouteError(data.error || `Server rute error (${res.status})`);
+    const e = new RouteError(res.status === 429
+      ? 'Server rute gratisnya lagi sibuk. Tunggu sebentar terus coba lagi.'
+      : data.error || `Server rute error (${res.status})`);
     e.code = data.error_code;
     throw e;
   }
@@ -41,11 +53,11 @@ async function post(path, body, signal) {
 
 const loc = ([lat, lon]) => ({ lat, lon });
 
-function traceAttributes(shape, signal) {
+function traceAttributes(shape, signal, costing = 'motorcycle') {
   return post('/trace_attributes', {
     encoded_polyline: shape,
     shape_match: 'edge_walk',
-    costing: 'motorcycle',
+    costing,
     filters: { attributes: TRACE_ATTRS, action: 'include' },
   }, signal);
 }
@@ -56,10 +68,8 @@ function traceAttributes(shape, signal) {
  * bicycle profile and then re-checked as a motorcycle route (dropped if a bike-only
  * path or one-way makes it invalid for a motorbike).
  */
-async function candidateTrips(from, to, signal) {
-  const locations = [loc(from), loc(to)];
-  const base = { locations, units: 'km' };
-  const jobs = [
+function motorJobs(base, signal) {
+  return [
     post('/route', { ...base, costing: 'motorcycle', alternates: 2 }, signal)
       .then((r) => [r.trip, ...(r.alternates || []).map((a) => a.trip)]),
     post('/route', { ...base, costing: 'motorcycle', costing_options: { motorcycle: { shortest: true } } }, signal)
@@ -70,27 +80,50 @@ async function candidateTrips(from, to, signal) {
       }, signal))
       .then((r) => [r.trip]),
   ];
+}
+
+/**
+ * Candidate car routes: with tolls allowed (+ alternatives), without tolls (+ one
+ * alternative), and the shortest. No small-roads trick: in a car small roads are a cost.
+ */
+function carJobs(base, signal) {
+  const withAlts = (r) => [r.trip, ...(r.alternates || []).map((a) => a.trip)];
+  return [
+    post('/route', { ...base, costing: 'auto', alternates: 2 }, signal).then(withAlts),
+    post('/route', { ...base, costing: 'auto', alternates: 1, costing_options: { auto: { exclude_tolls: true } } }, signal).then(withAlts),
+    post('/route', { ...base, costing: 'auto', costing_options: { auto: { shortest: true } } }, signal).then((r) => [r.trip]),
+  ];
+}
+
+async function candidateTrips(from, to, signal, mode) {
+  const base = { locations: [loc(from), loc(to)], units: 'km' };
+  const jobs = mode === 'mobil' ? carJobs(base, signal) : motorJobs(base, signal);
   const results = await Promise.allSettled(jobs);
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
-  const trips = results.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
+  const groups = results.map((r) => (r.status === 'fulfilled' ? r.value : []));
+  // Best of each personality first, alternatives after, so the 4-route cut keeps variety
+  // (for a car: at least one toll and one no-toll route when both exist).
+  const trips = [...groups.map((g) => g[0]).filter(Boolean), ...groups.flatMap((g) => g.slice(1))];
   if (!trips.length) {
     const first = results[0].reason;
     if (first?.name === 'AbortError') throw first;
+    const what = mode === 'mobil' ? 'mobil' : 'motor';
     throw first instanceof RouteError && first.code === 442
-      ? new RouteError('Gak nemu rute motor ke sana. Coba geser titiknya ke jalan terdekat.')
+      ? new RouteError(`Gak nemu rute ${what} ke sana. Coba geser titiknya ke jalan terdekat.`)
       : first || new RouteError('Gak nemu rute.');
   }
   return trips;
 }
 
 /** Analyzed, deduplicated, tagged routes, fastest first. */
-export async function findRoutes(from, to, { signal } = {}) {
-  const trips = await candidateTrips(from, to, signal);
+export async function findRoutes(from, to, { signal, mode = 'motor' } = {}) {
+  const costing = (MODES[mode] || MODES.motor).costing;
+  const trips = await candidateTrips(from, to, signal, mode);
   const routes = [];
   // Two at a time so we don't hammer the public server.
   for (let i = 0; i < trips.length; i += 2) {
     const batch = trips.slice(i, i + 2);
-    const traced = await Promise.allSettled(batch.map((t) => traceAttributes(t.legs[0].shape, signal)));
+    const traced = await Promise.allSettled(batch.map((t) => traceAttributes(t.legs[0].shape, signal, costing)));
     traced.forEach((r, j) => {
       if (r.status !== 'fulfilled') return;
       const a = analyzeRoute(batch[j], r.value);
@@ -102,7 +135,7 @@ export async function findRoutes(from, to, { signal } = {}) {
   if (!routes.length) throw new RouteError('Gak bisa baca detail jalannya. Coba lagi bentar.');
   const kept = dedupe(routes).slice(0, 4);
   kept.sort((a, b) => a.minutes - b.minutes || a.km - b.km);
-  tagRoutes(kept);
+  tagRoutes(kept, mode);
   for (const r of kept) {
     r.waypoints = pickWaypoints(r.edges, r.shape, 3);
     r.labelAt = labelPoint(r, kept.filter((o) => o !== r));
