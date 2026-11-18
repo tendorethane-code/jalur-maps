@@ -54,8 +54,8 @@ challenge weak assumptions and say plainly when something is unverified.
   Playwright with CDP touchStart, ~110 ms wait, touchEnd: `page.tap()` sends both at once and hides it.
 - Long-press = pointer events on the map element (`watchLongPress` in map.js). Google's map events
   never reported a held finger on touch. Drags >10 px and second fingers cancel it.
-- QA scripts that drove all main flows with finger-like taps lived in the session scratchpad; the
-  checklist is: Google engine + full-height canvas, Google search -> routes, bubble/card select,
+- Browser QA: `test/e2e/qa.cjs` (all main flows, finger-like taps) and `test/e2e/ghost.cjs`
+  (the ghost tap), see `test/e2e/README.md`. Run them after UI changes. The checklist is: Google engine + full-height canvas, Google search -> routes, bubble/card select,
   junction preview next/prev/close, swap (origin appears in Maps link), long-press, pick on map,
   sheet handle, reload keeps trip, 320 px and desktop without horizontal scroll, OSM fallback.
 - With a GPS start the Maps link omits `origin` so Google uses its live location.
