@@ -21,6 +21,12 @@ Rute yang dipilih dibuka di **Google Maps** dengan 3 titik singgah, jadi navigas
 data macetnya tetap dari Google. Kalau titik awalnya "Lokasi kamu", link-nya gak bawa
 titik awal, jadi Google pakai GPS live dan tinggal tekan **Mulai**.
 
+Cari tempat: ketik nama tempat atau jalan. Singkatan kayak "Jl.", "Gg." dan nomor rumah
+dirapihin dulu, dan hasil yang paling deket sama lu ditaruh paling atas (ada jaraknya).
+Kalau gak ketemu, ada tombol **Cari lebih teliti** (lebih bagus buat alamat lengkap). Bisa juga
+paste koordinat atau link Google Maps yang ada koordinatnya. Paling ampuh: di Google Maps
+tekan **Bagikan → Jalur** (Android, app udah dipasang), tujuannya langsung keisi.
+
 Tampilan: kartu rute bisa di-swipe, tiap rute ada gelembung waktu di peta, warna jalan
 (biru gede, hijau sedang, oranye kecil) konsisten di peta, bar, dan daftar jalan.
 Sheet bawah bisa ditarik (kecil / setengah / penuh). Mode gelap ikut setelan HP.

@@ -1,8 +1,8 @@
 // App shell cache so Jalur opens instantly and installs as an app.
 // Same-origin files: network first (updates show up right away), cache as fallback.
 // Map tiles, routing and search always go to the network and are never cached here.
-const CACHE = 'jalur-v2';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'lib/api.js', 'lib/route-analysis.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
+const CACHE = 'jalur-v3';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'lib/api.js', 'lib/route-analysis.js', 'lib/search.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 const CDN = ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'];
 
 self.addEventListener('install', (e) => {

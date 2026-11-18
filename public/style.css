@@ -166,6 +166,7 @@ svg { flex: none; }
   max-height: min(52vh, 380px); overflow-y: auto;
 }
 .suggestions[hidden] { display: none; }
+.suggestions.stale li:not(:has([data-i])), .suggestions.stale .s-text { opacity: 0.45; transition: opacity 0.15s; }
 .suggestions li button {
   display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
   border: 0; background: transparent; padding: 8px 10px; border-radius: var(--r-sm);

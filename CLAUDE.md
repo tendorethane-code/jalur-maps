@@ -32,9 +32,19 @@ challenge weak assumptions and say plainly when something is unverified.
 - "Hati-hati di sini" = `junctions()`: Valhalla maneuvers 9/16 (bear), 17–25 (ramp/exit/keep/merge),
   26 roundabout, 12/13 U-turn; flyover/underpass from `edge.bridge`/`edge.tunnel`. Plain turns left out.
 - With a GPS start the Maps link omits `origin` so Google uses its live location.
+- Search (`lib/search.js` + `searchPlaces`): expand "Jl./Gg./Jend." (Photon finds nothing for "Gg."),
+  strip "No. 6"/RT/RW, rerank by distance from the GPS fix, dedupe street pieces. Nominatim
+  ("Cari lebih teliti") only on tap: its policy forbids search-as-you-type.
+- Android share target (manifest `share_target`): Google Maps → Bagikan → Jalur fills the destination.
+- The Maps link sends the destination as coordinates, so Google labels it with the nearest shop
+  (picked "Living World", Google showed "Sociolla Living World"). Same spot; a name string would be
+  ambiguous ("Indomaret, Tangerang").
 
 ## Open questions (verify on a real phone and real routes)
-- Does Google Maps follow the 3 waypoints, and does `travelmode=two-wheeler` work?
+- Verified on the owner's Android: the link opens Google Maps in "Motor" mode with "3 perhentian".
+  Still unknown: does Google keep to our roads between the waypoints?
 - Is the OSM road-size classification right on the owner's usual routes?
+- Search is weaker than Google's: OSM lacks many POIs and house numbers. Owner's report: a full
+  address with "No. 6" found nothing. Fixed what's fixable; the share target covers the rest.
 - Is the junction list useful, too long, or missing forks?
 - No traffic data: minutes are free-flow. Google Routes API / TomTom have traffic but need keys.

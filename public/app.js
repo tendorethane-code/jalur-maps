@@ -1,7 +1,8 @@
 // Jalur UI: pick start + destination, compare motorbike routes by road size, preview the
 // tricky junctions up close, then open the chosen route in Google Maps.
 // All route maths lives in lib/route-analysis.js; network calls in lib/api.js.
-import { findRoutes, searchPlaces, reverse } from './lib/api.js';
+import { findRoutes, searchPlaces, searchPlacesDeep, reverse } from './lib/api.js';
+import { parseShared, formatDistance } from './lib/search.js';
 import { prosCons, googleMapsUrl, formatKm } from './lib/route-analysis.js';
 
 const L = window.L;
@@ -20,6 +21,7 @@ const state = {
   activeField: null, // 'from' | 'to' while typing
   picking: null, // 'from' | 'to' while choosing on the map
   previewAt: null, // junction index while previewing
+  gps: null, // last GPS fix, used to rank nearby search results first
   routeAbort: null,
   routeError: null,
   loading: false,
@@ -44,6 +46,7 @@ const stroke = (d) => `<path d="${d}" fill="none" stroke="currentColor" stroke-w
 const ICON = {
   gps: svg('<circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/>'),
   map: svg(stroke('M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zm0 0v14m6-12v14')),
+  search: svg('<circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/>' + stroke('m16 16 4.5 4.5')),
   recent: svg('<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/>' + stroke('M12 7.5V12l3 2')),
   place: svg('<path d="M12 2.5a6.5 6.5 0 0 0-6.5 6.5c0 4.6 6.5 12.5 6.5 12.5S18.5 13.6 18.5 9A6.5 6.5 0 0 0 12 2.5z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9" r="2.3" fill="currentColor"/>'),
   bolt: svg('<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12z" fill="currentColor"/>', 13),
@@ -166,6 +169,7 @@ function locate({ quiet = false } = {}) {
     (pos) => {
       els.locate.classList.remove('busy');
       const point = [pos.coords.latitude, pos.coords.longitude];
+      state.gps = point;
       setPlace('from', { point, main: 'Lokasi kamu', sub: '', gps: true });
       if (!state.to) map.setView(point, 15);
     },
@@ -187,12 +191,13 @@ let suggestionItems = [];
 function placeRow(it, attrs) {
   return `<button type="button" ${attrs}>
       <span class="s-icon${it.accent ? ' accent' : ''}">${it.icon || ICON.place}</span>
-      <span class="s-text"><span class="s-main">${esc(it.main)}</span>${it.sub ? `<span class="s-sub">${esc(it.sub)}</span>` : ''}</span>
+      <span class="s-text"><span class="s-main">${esc(it.main)}</span>${it.sub || it.km != null ? `<span class="s-sub">${esc([it.sub, formatDistance(it.km)].filter(Boolean).join(' · '))}</span>` : ''}</span>
     </button>`;
 }
 
 function showSuggestions(items, note) {
   suggestionItems = items;
+  els.suggestions.classList.remove('stale');
   els.suggestions.innerHTML = items.map((it, i) => `<li>${placeRow(it, `role="option" data-i="${i}"`)}</li>`).join('')
     + (note ? `<li class="s-note">${esc(note)}</li>` : '');
   els.suggestions.hidden = !items.length && !note;
@@ -206,23 +211,51 @@ function baseSuggestions(field) {
   return items;
 }
 
+// Rows that always sit under the results: a slower thorough search, and pick on map.
+function actionRows(q, { deep = true } = {}) {
+  const rows = [];
+  if (deep && q.length >= 3) rows.push({ icon: ICON.search, accent: true, main: 'Cari lebih teliti', sub: 'Bagus buat alamat lengkap, agak lama', action: 'deep', query: q });
+  rows.push({ icon: ICON.map, accent: true, main: 'Pilih di peta', sub: 'Ketuk titiknya di peta', action: 'pick' });
+  return rows;
+}
+
+function nearPoint() {
+  const c = map.getCenter();
+  return state.gps || state.from?.point || state.to?.point || [c.lat, c.lng];
+}
+
 const runSearch = debounce(async (field, q) => {
   searchAbort?.abort();
   searchAbort = new AbortController();
   try {
-    const c = map.getCenter();
-    const near = state.from?.point || state.to?.point || [c.lat, c.lng];
-    const results = await searchPlaces(q, near, searchAbort.signal);
-    if (state.activeField !== field) return;
-    showSuggestions(results, results.length ? '' : 'Gak ketemu. Coba nama tempat lain, atau pilih di peta.');
+    const results = await searchPlaces(q, nearPoint(), searchAbort.signal);
+    if (state.activeField !== field || els[field].value.trim() !== q) return;
+    showSuggestions([...results, ...actionRows(q)], results.length ? '' : 'Gak ketemu di pencarian cepat. Coba "Cari lebih teliti", atau pilih di peta.');
   } catch (err) {
-    if (err.name !== 'AbortError' && state.activeField === field) showSuggestions([], 'Pencarian lagi gak bisa. Coba lagi bentar.');
+    if (err.name !== 'AbortError' && state.activeField === field) showSuggestions(actionRows(q), 'Pencarian lagi gak bisa. Coba lagi bentar.');
   }
-}, 320);
+}, 200);
+
+async function runDeepSearch(field, q) {
+  searchAbort?.abort();
+  searchAbort = new AbortController();
+  showSuggestions([], 'Nyari lebih teliti…');
+  try {
+    const results = await searchPlacesDeep(q, nearPoint(), searchAbort.signal);
+    if (state.activeField !== field) return;
+    showSuggestions([...results, ...actionRows(q, { deep: false })],
+      results.length ? '' : 'Tetap gak ketemu. Data alamat di OpenStreetMap memang belum lengkap: pilih di peta, atau share lokasinya dari Google Maps ke Jalur.');
+  } catch (err) {
+    if (err.name !== 'AbortError' && state.activeField === field) showSuggestions(actionRows(q, { deep: false }), 'Pencarian teliti lagi gak bisa. Coba lagi bentar.');
+  }
+}
 
 function onInput(field) {
   const q = els[field].value.trim();
   if (q.length < 3) { searchAbort?.abort(); showSuggestions(baseSuggestions(field)); return; }
+  // Keep showing the previous results while the new ones load, like Google Maps does.
+  if (!suggestionItems.some((s) => !s.action)) showSuggestions(actionRows(q), 'Nyari…');
+  else els.suggestions.classList.add('stale'); // old results stay visible but faded until new ones land
   runSearch(field, q);
 }
 
@@ -236,6 +269,7 @@ function chooseSuggestion(i) {
   const field = state.activeField;
   const it = suggestionItems[i];
   if (!field || !it) return;
+  if (it.action === 'deep') return runDeepSearch(field, it.query);
   closeSuggestions();
   document.activeElement?.blur();
   if (it.action === 'gps') return locate();
@@ -259,6 +293,9 @@ els.suggestions.addEventListener('pointerdown', (e) => {
   const b = e.target.closest('button[data-i]');
   if (!b) return;
   e.preventDefault();
+  // Stop here: choosing can replace the list, and the document handler below would then see
+  // a detached target, think the tap was outside the search card, and close everything.
+  e.stopPropagation();
   chooseSuggestion(Number(b.dataset.i));
 });
 els.suggestions.addEventListener('keydown', (e) => {
@@ -266,7 +303,7 @@ els.suggestions.addEventListener('keydown', (e) => {
   if (b && e.key === 'Enter') { e.preventDefault(); chooseSuggestion(Number(b.dataset.i)); }
 });
 document.addEventListener('pointerdown', (e) => {
-  if (state.activeField && !els.search.contains(e.target)) closeSuggestions();
+  if (state.activeField && e.target.isConnected && !els.search.contains(e.target)) closeSuggestions();
 });
 
 els.locate.addEventListener('click', () => locate());
@@ -464,7 +501,7 @@ function render() {
     </div>
     ${recent.length ? `<div class="section-label">Terakhir dicari</div>
       <ul class="places">${recent.map((p, i) => `<li>${placeRow({ ...p, icon: ICON.recent }, `data-recent="${i}"`)}</li>`).join('')}</ul>` : ''}
-    <p class="about">Tekan lama di peta buat pilih tujuan. Data peta © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · rute Valhalla (FOSSGIS) · pencarian Photon.</p>`;
+    <p class="about">Tekan lama di peta buat pilih tujuan. Tempat gak ketemu? Di Google Maps tekan <b>Bagikan → Jalur</b> (Android, app udah dipasang). Data peta © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · rute Valhalla (FOSSGIS) · pencarian Photon.</p>`;
 }
 
 // Swiping the carousel selects the card that settles at the left edge.
@@ -594,6 +631,25 @@ const syncSearchHeight = () => document.documentElement.style.setProperty('--sea
 new ResizeObserver(syncSearchHeight).observe(els.search);
 syncSearchHeight();
 render();
+
+// Opened from another app's Share menu (Android, installed app): use what was shared as the
+// destination. Google Maps shares "Name\nAddress\nhttps://maps.app.goo.gl/…".
+function handleShare() {
+  const params = new URLSearchParams(location.search);
+  if (!['title', 'text', 'url'].some((k) => params.get(k))) return;
+  history.replaceState(null, '', location.pathname);
+  const shared = parseShared({ title: params.get('title') || '', text: params.get('text') || '', url: params.get('url') || '' });
+  if (!shared) return;
+  if (shared.point) {
+    placeAt('to', { lat: shared.point[0], lng: shared.point[1] });
+    return;
+  }
+  state.activeField = 'to';
+  els.to.value = shared.query;
+  showSuggestions(actionRows(shared.query), `Nyari "${shared.query}" dari Google Maps…`);
+  runSearch('to', shared.query);
+}
+handleShare();
 
 (async () => {
   // Ask for location right away unless the user already said no.

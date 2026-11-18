@@ -1,9 +1,11 @@
 // Network calls: Valhalla (routing, FOSSGIS public server) and Photon (place search).
 // Both are free public services run by volunteers; keep requests few and polite.
 import { analyzeRoute, dedupe, tagRoutes, pickWaypoints, labelPoint } from './route-analysis.js';
+import { normalizeQuery, stripAddressDetails, parseCoordinates, rankPlaces } from './search.js';
 
 const VALHALLA = 'https://valhalla1.openstreetmap.de';
 const PHOTON = 'https://photon.komoot.io';
+const NOMINATIM = 'https://nominatim.openstreetmap.org';
 // Jabodetabek, a bit generous: west Tangerang to east Bekasi/Karawang, Bogor to the coast.
 const BBOX = '106.35,-6.75,107.35,-5.95';
 
@@ -114,9 +116,8 @@ function placeLabel(p) {
   return { main, sub: [...new Set(area)].join(', ') };
 }
 
-/** Place search, biased to Jabodetabek and to the given point. */
-export async function searchPlaces(query, near, signal) {
-  const p = new URLSearchParams({ q: query, limit: '6', bbox: BBOX });
+async function photon(q, near, signal) {
+  const p = new URLSearchParams({ q, limit: '15', bbox: BBOX });
   if (near) { p.set('lat', near[0]); p.set('lon', near[1]); }
   const res = await fetch(`${PHOTON}/api/?${p}`, { signal });
   if (!res.ok) throw new Error('Pencarian lagi error');
@@ -125,6 +126,55 @@ export async function searchPlaces(query, near, signal) {
     ...placeLabel(f.properties),
     point: [f.geometry.coordinates[1], f.geometry.coordinates[0]],
   }));
+}
+
+function coordinateResult(point, name) {
+  return [{ main: name || 'Titik koordinat', sub: `${point[0].toFixed(5)}, ${point[1].toFixed(5)}`, point, exact: true }];
+}
+
+/**
+ * Search-as-you-type (Photon). Cleans the query first, retries without house number /
+ * RT-RW if that finds too little, puts nearby places first and drops duplicates.
+ * Pasted coordinates or Google Maps links with coordinates are used as-is.
+ */
+export async function searchPlaces(query, near, signal) {
+  const point = parseCoordinates(query);
+  if (point) return coordinateResult(point);
+  const clean = normalizeQuery(query);
+  const bare = stripAddressDetails(clean);
+  if (bare && bare !== clean) {
+    // A full address: OSM rarely has the house number, so the street itself comes first,
+    // then anything that matched the full text (shops at that address etc.).
+    const [street, full] = await Promise.all([photon(bare, near, signal), photon(clean, near, signal)]);
+    return rankPlaces([...street, ...full], near);
+  }
+  return rankPlaces(await photon(clean, near, signal), near);
+}
+
+/**
+ * Slower, more thorough search (Nominatim): better with full addresses and house numbers.
+ * Only run when the user asks for it: Nominatim's usage policy forbids search-as-you-type.
+ */
+export async function searchPlacesDeep(query, near, signal) {
+  const point = parseCoordinates(query);
+  if (point) return coordinateResult(point);
+  const clean = normalizeQuery(query);
+  const p = new URLSearchParams({
+    q: clean, format: 'jsonv2', addressdetails: '1', limit: '10', countrycodes: 'id',
+    viewbox: BBOX, bounded: '1', 'accept-language': 'id',
+  });
+  const res = await fetch(`${NOMINATIM}/search?${p}`, { signal });
+  if (!res.ok) throw new Error('Pencarian lagi error');
+  const data = await res.json();
+  const places = data.map((r) => {
+    const a = r.address || {};
+    const street = [a.road, a.house_number].filter(Boolean).join(' ');
+    const main = r.name || street || r.display_name.split(',')[0];
+    const area = [a.suburb || a.village || a.neighbourhood, a.city_district, a.city || a.county || a.town]
+      .filter((x) => x && x !== main);
+    return { main, sub: [...new Set(area)].slice(0, 2).join(', '), point: [Number(r.lat), Number(r.lon)] };
+  });
+  return rankPlaces(places, near, { limit: 8 });
 }
 
 /** Name of the place at a point (for "Lokasi kamu" and map taps). */
