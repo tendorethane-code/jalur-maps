@@ -3,7 +3,8 @@
 Personal motorbike route chooser for Jabodetabek. Compares routes by road size
 (gede/sedang/kecil), shows main streets, plus-minus and the junctions where riders take
 the wrong branch, then opens the chosen route in Google Maps via 3 waypoints.
-Static web app/PWA: no build step, no dependencies, no API keys.
+Static web app/PWA: no build step, no dependencies. Google Maps + Places (New) with the owner's
+browser key in `public/config.js`; OpenStreetMap fallback when Google fails.
 
 The owner writes in casual Indonesian; reply the same way. They want a sparring partner:
 challenge weak assumptions and say plainly when something is unverified.
@@ -12,7 +13,12 @@ challenge weak assumptions and say plainly when something is unverified.
 - `public/` is the whole app and is what gets deployed.
   - `lib/route-analysis.js`: pure logic (road groups, stats, plus-minus, junctions, waypoints,
     Google Maps URL). Tested.
-  - `lib/api.js`: Valhalla (FOSSGIS public server, `motorcycle` costing) + Photon search.
+  - `lib/api.js`: Valhalla (FOSSGIS public server, `motorcycle` costing) + Photon/Nominatim search.
+  - `lib/map.js`: one map interface, two engines: Google (normal) and Leaflet/OSM (fallback,
+    lazy-loaded). App code only talks to this interface.
+  - `lib/google-places.js`: Google Places autocomplete + `location` lookup (session token).
+  - `config.js`: Google browser key + Map ID. Public on purpose; restricted in Google Cloud to
+    `https://tendorethane-code.github.io/*` + `http://localhost:5173/*` and to Maps JS + Places (New).
   - `app.js` UI, `style.css` design tokens at the top, `sw.js` app-shell cache.
 - `test/`: `npm test` (node:test) with real recorded Valhalla responses in `test/fixtures`.
 - `scripts/serve.js`: `npm run dev` → http://localhost:5173.
@@ -26,7 +32,16 @@ challenge weak assumptions and say plainly when something is unverified.
   `chromium.launch({ proxy: { server: process.env.HTTPS_PROXY, bypass: 'localhost' } })`.
 
 ## Gotchas
-- CARTO basemaps now need an API key; use OSM tiles (dark mode = CSS filter on the tile pane).
+- Google map is forced to `renderingType: RASTER` (vector needs WebGL). Dark mode = `colorScheme`.
+- Google Places results may only be shown on a Google map, so Google search runs only in Google
+  map mode; the OSM fallback uses Photon/Nominatim.
+- Fallbacks: script load error or 10 s timeout -> OSM; `gm_authFailure` (key/referrer/quota) -> OSM for
+  1 h; no `tilesloaded` after 12 s -> a "Pakai peta cadangan" button (OSM for 6 h, link back in the
+  sheet footer). Google search error -> Photon for the rest of the visit.
+- The headless test browser here never gets Google map tiles (no tile requests at all, even for a
+  bare map). Google search, routes and the OSM fallback are testable here; the Google map itself
+  only on the owner's phone. Don't try to make the test browser look non-automated to get round it.
+- CARTO basemaps now need an API key; the OSM fallback uses OSM tiles (dark mode = CSS filter).
 - The bicycle-profile "small roads" candidate is re-checked with `/trace_route` as a motorcycle;
   a 400 there is expected and the candidate is dropped.
 - "Hati-hati di sini" = `junctions()`: Valhalla maneuvers 9/16 (bear), 17–25 (ramp/exit/keep/merge),
@@ -47,9 +62,9 @@ challenge weak assumptions and say plainly when something is unverified.
   near stop A); unconfirmed whether it is a detour.
 - Jalur's minutes are far too slow there: 40 / 48 min vs Google 24 / 26 min (normal traffic).
   Valhalla motorcycle speeds look pessimistic for Tangerang roads. Don't present minutes as exact.
-- Owner wants place search "sama kayak GMaps". Real fix = Google Places Autocomplete (needs the
-  owner's Google Cloud billing + a referrer-restricted key). Places policy: results shown on a map
-  must be on a Google Map, so that also means switching the base map. Waiting on the owner's choice.
+- Google map + Places search shipped (owner set up Google Cloud, Rp500k prepayment requirement for
+  their card). Unverified on a real phone yet: does the Google map render, do markers/bubbles sit
+  right, does long-press set the destination? Did the owner set the daily quotas (step 6)?
 - Is the OSM road-size classification right on the owner's usual routes?
 - Search is weaker than Google's: OSM lacks many POIs and house numbers. Owner's report: a full
   address with "No. 6" found nothing. Fixed what's fixable; the share target covers the rest.

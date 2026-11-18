@@ -136,6 +136,8 @@ test('junctions lists the forks on the real route, in Indonesian', () => {
   for (const x of j) assert.ok(Array.isArray(x.point) && typeof x.bearing === 'number');
   const uturn = junctions({ legs: [{ maneuvers: [{ type: 1, begin_shape_index: 0, length: 1 }, { type: 13, begin_shape_index: 5, length: 1, street_names: ['Jalan Taman Patra Kuningan'], instruction: 'Make a left U-turn to stay on Jalan Taman Patra Kuningan.' }] }] }, trace.edges, shape);
   assert.equal(uturn[0].text, 'Putar balik di Jl. Taman Patra Kuningan');
+  const round = junctions({ legs: [{ maneuvers: [{ type: 1, begin_shape_index: 0, length: 1 }, { type: 26, begin_shape_index: 5, length: 1 }] }] }, trace.edges, shape);
+  assert.equal(round[0].text, 'Masuk bundaran');
 });
 
 test('analyzeRoute gives each main street its road size', () => {

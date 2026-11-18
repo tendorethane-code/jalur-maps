@@ -21,7 +21,10 @@ Rute yang dipilih dibuka di **Google Maps** dengan 3 titik singgah, jadi navigas
 data macetnya tetap dari Google. Kalau titik awalnya "Lokasi kamu", link-nya gak bawa
 titik awal, jadi Google pakai GPS live dan tinggal tekan **Mulai**.
 
-Cari tempat: ketik nama tempat atau jalan. Singkatan kayak "Jl.", "Gg." dan nomor rumah
+Peta dan pencarian tempat pakai **Google** (sama kayak di Google Maps). Kalau Google lagi
+gak bisa (kuota habis, error), Jalur otomatis pindah ke peta cadangan OpenStreetMap.
+
+Pencarian cadangan (OpenStreetMap): ketik nama tempat atau jalan. Singkatan kayak "Jl.", "Gg." dan nomor rumah
 dirapihin dulu, dan hasil yang paling deket sama lu ditaruh paling atas (ada jaraknya).
 Kalau gak ketemu, ada tombol **Cari lebih teliti** (lebih bagus buat alamat lengkap). Bisa juga
 paste koordinat atau link Google Maps yang ada koordinatnya. Paling ampuh: di Google Maps
@@ -46,10 +49,10 @@ GitHub Pages tiap ada perubahan di `main`.
 
 | Bagian | Sumber | Catatan |
 | --- | --- | --- |
-| Peta | tile OpenStreetMap | Gratis buat pemakaian pribadi yang ringan. Mode gelap = filter CSS. |
+| Peta | Google Maps (cadangan: tile OpenStreetMap) | Kunci browser di `public/config.js`, dibatasi ke situs ini. |
 | Rute | [Valhalla](https://valhalla1.openstreetmap.de) (server publik FOSSGIS), profil `motorcycle` | Gratis, tanpa key, **tanpa data macet**. |
 | Jenis jalan | `trace_attributes` Valhalla per ruas | primary/secondary/trunk = gede, tertiary = sedang, sisanya + living street/alley = kecil. |
-| Cari tempat | [Photon](https://photon.komoot.io) | Dibatasi ke kotak Jabodetabek. |
+| Cari tempat | Google Places (cadangan: [Photon](https://photon.komoot.io) + Nominatim) | Yang deket muncul duluan. |
 
 Kandidat rute (`public/lib/api.js`):
 1. rute motor standar + 2 alternatif,

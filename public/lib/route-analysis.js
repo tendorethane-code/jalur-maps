@@ -151,7 +151,7 @@ export function junctions(trip, edges, shape) {
       if (next && groupOf(next) === 'kecil' && prev && groupOf(prev) !== 'kecil') notes.push('masuk jalan kecil');
       out.push({
         side,
-        text: [verb, target].filter(Boolean).join(' '),
+        text: side === 'bundaran' && !target ? 'Masuk bundaran' : [verb, target].filter(Boolean).join(' '),
         notes,
         km,
         point: shape[m.begin_shape_index],

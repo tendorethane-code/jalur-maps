@@ -80,6 +80,8 @@ svg { flex: none; }
 
 /* ---------- Map ---------- */
 #map { position: fixed; inset: 0; background: var(--sunken); z-index: 0; }
+/* Google's own controls sit at the edges; keep its zoom buttons below the search card on wide screens. */
+#map .gm-bundled-control { margin-top: 12px !important; }
 .leaflet-container { font-family: var(--font); background: var(--sunken); }
 .leaflet-control-attribution { font-size: 10px; background: color-mix(in srgb, var(--surface) 80%, transparent) !important; color: var(--muted); }
 .leaflet-control-attribution a { color: var(--muted); }
@@ -92,13 +94,14 @@ svg { flex: none; }
 :root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.88) saturate(0.55); }
 
 /* Map markers */
-.m-from { width: 22px; height: 22px; border-radius: 50%; background: var(--from); border: 3.5px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); position: relative; }
+.m-from { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; background: var(--from); border: 3.5px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 .m-from.gps::after {
   content: ""; position: absolute; inset: -12px; border-radius: 50%;
   background: color-mix(in srgb, var(--from) 22%, transparent);
   animation: halo 2s ease-out infinite; z-index: -1;
 }
 @keyframes halo { from { transform: scale(0.5); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
+.m-to { position: absolute; transform: translate(-50%, -95%); }
 .m-to svg { display: block; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.3)); }
 .bubble {
   position: absolute; transform: translate(-50%, -50%);
@@ -194,6 +197,14 @@ svg { flex: none; }
 .pick-banner button { border: 0; border-radius: 999px; background: color-mix(in srgb, var(--bg) 22%, transparent); color: inherit; padding: 7px 14px; font-weight: 700; }
 .pick-banner[hidden] { display: none; }
 body.picking .sheet, body.previewing .sheet { transform: translateY(105%); }
+.map-notice {
+  position: fixed; z-index: 1001; left: 50%; transform: translateX(-50%);
+  top: calc(var(--search-h, 112px) + 22px + var(--safe-top));
+  display: flex; align-items: center; gap: 10px; white-space: nowrap;
+  background: var(--surface); color: var(--ink); box-shadow: var(--shadow-2);
+  padding: 8px 8px 8px 14px; border-radius: 999px; font-size: 14px; font-weight: 600;
+}
+.map-notice button { border: 0; border-radius: 999px; background: var(--accent); color: var(--on-accent); padding: 7px 12px; font-weight: 700; }
 
 /* ---------- Bottom sheet ---------- */
 .sheet {

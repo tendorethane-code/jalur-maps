@@ -2,10 +2,11 @@
 // tricky junctions up close, then open the chosen route in Google Maps.
 // All route maths lives in lib/route-analysis.js; network calls in lib/api.js.
 import { findRoutes, searchPlaces, searchPlacesDeep, reverse } from './lib/api.js';
-import { parseShared, formatDistance } from './lib/search.js';
+import { parseShared, parseCoordinates, formatDistance } from './lib/search.js';
 import { prosCons, googleMapsUrl, formatKm } from './lib/route-analysis.js';
-
-const L = window.L;
+import { createMap, useFallbackMap, useGoogleMap } from './lib/map.js';
+import { googleSuggest, googleResolve } from './lib/google-places.js';
+import { GOOGLE } from './config.js';
 const $ = (id) => document.getElementById(id);
 const els = {
   search: $('search'), from: $('from'), to: $('to'), locate: $('locate'), swap: $('swap'),
@@ -72,67 +73,62 @@ function junctionIcon(side, size = 18) {
 
 /* ---------- map ---------- */
 const JAKARTA = [-6.2, 106.83];
-const map = L.map('map', { zoomControl: false, attributionControl: true }).setView(JAKARTA, 12);
-L.control.zoom({ position: 'topright' }).addTo(map);
-map.attributionControl.setPrefix(false);
-// Standard OpenStreetMap tiles (free for light personal use, no key). Dark mode
-// recolours them with a CSS filter on the tile pane, see style.css.
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-}).addTo(map);
+const map = await createMap($('map'), { center: JAKARTA, zoom: 12, apiKey: GOOGLE.apiKey, mapId: GOOGLE.mapId, wide: isWide() });
+document.body.dataset.map = map.kind;
+// Google search only on the Google map (Google's rules), and only until it fails once.
+let googleSearch = map.kind === 'google';
+
+// A blank grey Google map (no tiles after 12 s): offer the OSM map instead of leaving the rider stuck.
+map.onNoTiles?.(() => {
+  const bar = document.createElement('div');
+  bar.className = 'map-notice';
+  bar.innerHTML = '<span>Peta Google belum muncul?</span><button type="button">Pakai peta cadangan</button>';
+  bar.querySelector('button').addEventListener('click', () => useFallbackMap(6));
+  document.body.append(bar);
+});
+
 const dark = window.matchMedia('(prefers-color-scheme: dark)');
 dark.addEventListener('change', () => { drawMarkers(); drawRoutes(false); });
 
-const routeLayer = L.layerGroup().addTo(map);
-const labelLayer = L.layerGroup().addTo(map);
-const markerLayer = L.layerGroup().addTo(map);
-const previewLayer = L.layerGroup().addTo(map);
-
-const divIcon = (html, className = '') => L.divIcon({ className, html, iconSize: [0, 0], iconAnchor: [0, 0] });
+const routeLayer = map.layer();
+const labelLayer = map.layer();
+const markerLayer = map.layer();
+const previewLayer = map.layer();
 
 function drawMarkers() {
-  markerLayer.clearLayers();
+  markerLayer.clear();
   if (state.from) {
-    L.marker(state.from.point, { icon: divIcon(`<div class="m-from${state.from.gps ? ' gps' : ''}" style="transform:translate(-50%,-50%)"></div>`), keyboard: false, interactive: false }).addTo(markerLayer);
+    markerLayer.html(state.from.point, `<div class="m-from${state.from.gps ? ' gps' : ''}"></div>`, { zIndex: 50 });
   }
   if (state.to) {
-    L.marker(state.to.point, {
-      icon: L.divIcon({
-        className: 'm-to', iconSize: [30, 36], iconAnchor: [15, 34],
-        html: `<svg viewBox="0 0 30 36" width="30" height="36"><path d="M15 1C7.3 1 2 6.6 2 13.6 2 23 15 35 15 35s13-12 13-21.4C28 6.6 22.7 1 15 1z" fill="${css('--to')}" stroke="#fff" stroke-width="2"/><rect x="10" y="8.5" width="10" height="10" rx="2.5" fill="#fff"/></svg>`,
-      }),
-      keyboard: false, interactive: false,
-    }).addTo(markerLayer);
+    markerLayer.html(state.to.point, `<div class="m-to"><svg viewBox="0 0 30 36" width="30" height="36"><path d="M15 1C7.3 1 2 6.6 2 13.6 2 23 15 35 15 35s13-12 13-21.4C28 6.6 22.7 1 15 1z" fill="${css('--to')}" stroke="#fff" stroke-width="2"/><rect x="10" y="8.5" width="10" height="10" rx="2.5" fill="#fff"/></svg></div>`, { zIndex: 60 });
   }
 }
 
 function drawRoutes(fit = true) {
-  routeLayer.clearLayers();
-  labelLayer.clearLayers();
+  routeLayer.clear();
+  labelLayer.clear();
   if (!state.routes.length) return;
   const colors = { gede: css('--gede'), sedang: css('--sedang'), kecil: css('--kecil') };
   const casing = css('--casing');
   state.routes.forEach((r, i) => {
     if (i === state.selected) return;
-    L.polyline(r.shape, { color: casing, weight: 9, opacity: 0.9, lineCap: 'round', interactive: false }).addTo(routeLayer);
-    L.polyline(r.shape, { color: css('--other'), weight: 5, opacity: 0.95, lineCap: 'round' }).on('click', () => select(i)).addTo(routeLayer);
+    routeLayer.polyline(r.shape, { color: casing, weight: 9, opacity: 0.9, zIndex: 1 });
+    routeLayer.polyline(r.shape, { color: css('--other'), weight: 5, opacity: 0.95, zIndex: 2, onClick: () => select(i) });
   });
   const sel = state.routes[state.selected];
-  L.polyline(sel.shape, { color: casing, weight: 11, opacity: 1, lineCap: 'round', interactive: false }).addTo(routeLayer);
+  routeLayer.polyline(sel.shape, { color: casing, weight: 11, zIndex: 3 });
   for (const s of sel.stretches) {
-    L.polyline(sel.shape.slice(s.from, s.to + 1), { color: colors[s.group], weight: 6.5, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(routeLayer);
+    routeLayer.polyline(sel.shape.slice(s.from, s.to + 1), { color: colors[s.group], weight: 6.5, zIndex: 4 });
   }
   // Junction dots on the selected route: tap one to preview it.
   sel.junctions.forEach((j, k) => {
-    L.marker(j.point, { icon: divIcon('<div class="m-junction"></div>'), title: j.text, zIndexOffset: 100 })
-      .on('click', () => openPreview(k)).addTo(labelLayer);
+    labelLayer.html(j.point, `<div class="m-junction" title="${esc(j.text)}"></div>`, { zIndex: 100, onClick: () => openPreview(k) });
   });
   // Time bubbles: one per route, on a stretch only that route uses.
   state.routes.forEach((r, i) => {
     const html = `<div class="bubble${i === state.selected ? ' sel' : ''}">${r.minutes} mnt<i>${formatKm(r.km)}</i></div>`;
-    L.marker(r.labelAt, { icon: divIcon(html), zIndexOffset: i === state.selected ? 1000 : 500, keyboard: false })
-      .on('click', () => select(i)).addTo(labelLayer);
+    labelLayer.html(r.labelAt, html, { zIndex: i === state.selected ? 1000 : 500, onClick: () => select(i) });
   });
   if (fit) fitRoute(sel);
 }
@@ -140,10 +136,8 @@ function drawRoutes(fit = true) {
 function fitRoute(route) {
   const top = els.search.getBoundingClientRect().bottom + 16;
   const bottom = isWide() ? 24 : els.sheet.getBoundingClientRect().height + 16;
-  map.fitBounds(L.latLngBounds(route.shape), {
-    paddingTopLeft: [isWide() ? 430 : 28, isWide() ? 24 : top],
-    paddingBottomRight: [isWide() ? 40 : 56, bottom],
-    maxZoom: 17,
+  map.fitPoints(route.shape, {
+    top: isWide() ? 24 : top, left: isWide() ? 430 : 28, right: isWide() ? 40 : 28, bottom,
   });
 }
 
@@ -214,22 +208,31 @@ function baseSuggestions(field) {
 // Rows that always sit under the results: a slower thorough search, and pick on map.
 function actionRows(q, { deep = true } = {}) {
   const rows = [];
-  if (deep && q.length >= 3) rows.push({ icon: ICON.search, accent: true, main: 'Cari lebih teliti', sub: 'Bagus buat alamat lengkap, agak lama', action: 'deep', query: q });
+  if (deep && !googleSearch && q.length >= 3) rows.push({ icon: ICON.search, accent: true, main: 'Cari lebih teliti', sub: 'Bagus buat alamat lengkap, agak lama', action: 'deep', query: q });
   rows.push({ icon: ICON.map, accent: true, main: 'Pilih di peta', sub: 'Ketuk titiknya di peta', action: 'pick' });
   return rows;
 }
 
 function nearPoint() {
-  const c = map.getCenter();
-  return state.gps || state.from?.point || state.to?.point || [c.lat, c.lng];
+  return state.gps || state.from?.point || state.to?.point || map.getCenter();
 }
 
 const runSearch = debounce(async (field, q) => {
   searchAbort?.abort();
   searchAbort = new AbortController();
   try {
-    const results = await searchPlaces(q, nearPoint(), searchAbort.signal);
-    if (state.activeField !== field || els[field].value.trim() !== q) return;
+    const signal = searchAbort.signal;
+    let results;
+    if (googleSearch && !parseCoordinates(q)) {
+      try {
+        results = await googleSuggest(q, nearPoint());
+      } catch (err) {
+        console.warn('Google search failed, using OpenStreetMap search:', err);
+        googleSearch = false; // quota, key or network: stop trying for this visit
+      }
+    }
+    results ||= await searchPlaces(q, nearPoint(), signal);
+    if (signal.aborted || state.activeField !== field || els[field].value.trim() !== q) return;
     showSuggestions([...results, ...actionRows(q)], results.length ? '' : 'Gak ketemu di pencarian cepat. Coba "Cari lebih teliti", atau pilih di peta.');
   } catch (err) {
     if (err.name !== 'AbortError' && state.activeField === field) showSuggestions(actionRows(q), 'Pencarian lagi gak bisa. Coba lagi bentar.');
@@ -274,7 +277,20 @@ function chooseSuggestion(i) {
   document.activeElement?.blur();
   if (it.action === 'gps') return locate();
   if (it.action === 'pick') return startPicking(field);
+  if (it.prediction) return chooseGooglePlace(field, it);
   setPlace(field, { point: it.point, main: it.main, sub: it.sub });
+}
+
+async function chooseGooglePlace(field, it) {
+  els[field].value = it.main;
+  try {
+    const point = await googleResolve(it);
+    setPlace(field, { point, main: it.main, sub: it.sub });
+  } catch (err) {
+    console.warn('Google place lookup failed:', err);
+    els[field].value = state[field]?.main || '';
+    alert('Lokasi tempat itu gak bisa diambil dari Google. Coba lagi, atau pilih di peta.');
+  }
 }
 
 for (const field of ['from', 'to']) {
@@ -330,8 +346,7 @@ function stopPicking() {
 }
 els.pickCancel.addEventListener('click', stopPicking);
 
-async function placeAt(field, latlng) {
-  const point = [latlng.lat, latlng.lng];
+async function placeAt(field, point) {
   setPlace(field, { point, main: 'Titik di peta', sub: '' });
   const name = await reverse(point);
   if (name && state[field]?.point === point) {
@@ -342,14 +357,14 @@ async function placeAt(field, latlng) {
   }
 }
 
-map.on('click', (e) => {
+map.onClick((point) => {
   if (!state.picking) return;
   const field = state.picking;
   stopPicking();
-  placeAt(field, e.latlng);
+  placeAt(field, point);
 });
 // Long-press (or right-click) anywhere sets the destination.
-map.on('contextmenu', (e) => { stopPicking(); closePreview(); placeAt('to', e.latlng); });
+map.onLongPress((point) => { stopPicking(); closePreview(); placeAt('to', point); });
 
 /* ---------- routing ---------- */
 function maybeRoute() {
@@ -357,8 +372,8 @@ function maybeRoute() {
   closePreview();
   state.routes = [];
   state.routeError = null;
-  routeLayer.clearLayers();
-  labelLayer.clearLayers();
+  routeLayer.clear();
+  labelLayer.clear();
   if (!state.from || !state.to) { state.loading = false; render(); return; }
   computeRoutes();
 }
@@ -501,7 +516,9 @@ function render() {
     </div>
     ${recent.length ? `<div class="section-label">Terakhir dicari</div>
       <ul class="places">${recent.map((p, i) => `<li>${placeRow({ ...p, icon: ICON.recent }, `data-recent="${i}"`)}</li>`).join('')}</ul>` : ''}
-    <p class="about">Tekan lama di peta buat pilih tujuan. Tempat gak ketemu? Di Google Maps tekan <b>Bagikan → Jalur</b> (Android, app udah dipasang). Data peta © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · rute Valhalla (FOSSGIS) · pencarian Photon.</p>`;
+    <p class="about">Tekan lama di peta buat pilih tujuan. ${map.kind === 'google'
+      ? 'Peta & pencarian: Google. Rute & jenis jalan: Valhalla (FOSSGIS) dari data <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.'
+      : 'Lagi pakai peta cadangan (OpenStreetMap). <a href="#" data-action="google">Coba peta Google lagi</a>. Data peta © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · rute Valhalla (FOSSGIS) · pencarian Photon.'}</p>`;
 }
 
 // Swiping the carousel selects the card that settles at the left edge.
@@ -526,6 +543,7 @@ function bindCarousel() {
 
 els.body.addEventListener('click', (e) => {
   if (e.target.closest('[data-action="retry"]')) return computeRoutes();
+  if (e.target.closest('[data-action="google"]')) { e.preventDefault(); return useGoogleMap(); }
   const recent = e.target.closest('[data-recent]');
   if (recent) {
     const p = store.get('jalur.recent', [])[Number(recent.dataset.recent)];
@@ -557,17 +575,11 @@ function openPreview(k) {
       <button type="button" data-pv="prev" ${k === 0 ? 'disabled' : ''}>${ICON.prev}Sebelumnya</button>
       <button type="button" class="primary" data-pv="next">${k === r.junctions.length - 1 ? 'Selesai' : `Berikutnya${ICON.next}`}</button>
     </div>`;
-  previewLayer.clearLayers();
-  L.marker(j.point, {
-    icon: divIcon(`<div class="m-arrow"><div>${svg('<path d="M12 3 5 20l7-4 7 4z" fill="currentColor"/>', 24, `style="transform:rotate(${j.bearing}deg)"`)}</div></div>`),
-    interactive: false, zIndexOffset: 2000,
-  }).addTo(previewLayer);
-  // Keep the junction above the preview card.
-  const zoom = 18;
+  previewLayer.clear();
+  previewLayer.html(j.point, `<div class="m-arrow"><div>${svg('<path d="M12 3 5 20l7-4 7 4z" fill="currentColor"/>', 24, `style="transform:rotate(${j.bearing}deg)"`)}</div></div>`, { zIndex: 2000 });
+  // Keep the junction above the preview card: the map centre sits below it by half the card.
   const card = els.preview.getBoundingClientRect().height;
-  const shift = isWide() ? [-200, 0] : [0, card / 2];
-  const target = map.unproject(map.project(j.point, zoom).add(shift), zoom);
-  map.flyTo(target, zoom, { duration: 0.7 });
+  map.flyTo(j.point, 18, isWide() ? [-200, 0] : [0, card / 2]);
 }
 
 function closePreview() {
@@ -575,7 +587,7 @@ function closePreview() {
   state.previewAt = null;
   els.preview.hidden = true;
   document.body.classList.remove('previewing');
-  previewLayer.clearLayers();
+  previewLayer.clear();
   const r = state.routes[state.selected];
   if (r) setTimeout(() => fitRoute(r), 300);
 }
@@ -641,7 +653,7 @@ function handleShare() {
   const shared = parseShared({ title: params.get('title') || '', text: params.get('text') || '', url: params.get('url') || '' });
   if (!shared) return;
   if (shared.point) {
-    placeAt('to', { lat: shared.point[0], lng: shared.point[1] });
+    placeAt('to', shared.point);
     return;
   }
   state.activeField = 'to';
