@@ -38,9 +38,11 @@ challenge weak assumptions and say plainly when something is unverified.
 - Fallbacks: script load error or 10 s timeout -> OSM; `gm_authFailure` (key/referrer/quota) -> OSM for
   1 h; no `tilesloaded` after 12 s -> a "Pakai peta cadangan" button (OSM for 6 h, link back in the
   sheet footer). Google search error -> Photon for the rest of the visit.
-- The headless test browser here never gets Google map tiles (no tile requests at all, even for a
-  bare map). Google search, routes and the OSM fallback are testable here; the Google map itself
-  only on the owner's phone. Don't try to make the test browser look non-automated to get round it.
+- Google sets `position: relative` on the element it renders into. Rendered straight into the fixed
+  `#map` that made it 0 px tall: blank map, no tile requests, on the owner's phone and in headless
+  alike (I first blamed headless; wrong). Both engines now draw into a full-size child
+  (`freshCanvas`). If the Google map is blank, check the canvas height before anything else.
+- The Google map renders fine in headless Playwright here, so test it here.
 - CARTO basemaps now need an API key; the OSM fallback uses OSM tiles (dark mode = CSS filter).
 - The bicycle-profile "small roads" candidate is re-checked with `/trace_route` as a motorcycle;
   a 400 there is expected and the candidate is dropped.
@@ -63,8 +65,10 @@ challenge weak assumptions and say plainly when something is unverified.
 - Jalur's minutes are far too slow there: 40 / 48 min vs Google 24 / 26 min (normal traffic).
   Valhalla motorcycle speeds look pessimistic for Tangerang roads. Don't present minutes as exact.
 - Google map + Places search shipped (owner set up Google Cloud, Rp500k prepayment requirement for
-  their card). Unverified on a real phone yet: does the Google map render, do markers/bubbles sit
-  right, does long-press set the destination? Did the owner set the daily quotas (step 6)?
+  their card). First phone test: map blank (0 px bug above, fixed). Still to confirm on the phone:
+  long-press sets the destination; whether the jump to OSM the owner saw was them tapping the
+  fallback button or `gm_authFailure`. The trip now survives that reload (sessionStorage).
+  Did the owner set the daily quotas (step 6)?
 - Is the OSM road-size classification right on the owner's usual routes?
 - Search is weaker than Google's: OSM lacks many POIs and house numbers. Owner's report: a full
   address with "No. 6" found nothing. Fixed what's fixable; the share target covers the rest.

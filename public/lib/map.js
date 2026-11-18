@@ -197,7 +197,19 @@ export function useGoogleMap() {
  * after loading (wrong referrer, API off, quota), it calls gm_authFailure: remember that for
  * an hour and reload into OSM mode instead of leaving a grey "Oops" map.
  */
-export async function createMap(el, opts) {
+// Both engines draw into a fresh child that fills the fixed #map box. Google sets
+// `position: relative` on whatever element it gets, which turned the fixed full-screen
+// #map into a 0 px tall box: the map existed but was invisible and never asked for tiles.
+function freshCanvas(host) {
+  host.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'map-canvas';
+  el.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+  host.append(el);
+  return el;
+}
+
+export async function createMap(host, opts) {
   let blockedUntil = 0;
   try { blockedUntil = Number(localStorage.getItem(NO_GOOGLE_KEY) || 0); } catch { /* private mode */ }
   if (opts.apiKey && opts.mapId && Date.now() > blockedUntil) {
@@ -205,14 +217,13 @@ export async function createMap(el, opts) {
     let gaveUp = false;
     try {
       return await Promise.race([
-        googleMap(el, { ...opts, gaveUp: () => gaveUp }),
+        googleMap(freshCanvas(host), { ...opts, gaveUp: () => gaveUp }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Google Maps kelamaan')), 10000)),
       ]);
     } catch (err) {
       gaveUp = true;
       console.warn('Google Maps unavailable, using OpenStreetMap:', err.message);
-      el.innerHTML = '';
     }
   }
-  return leafletMap(el, opts);
+  return leafletMap(freshCanvas(host), opts);
 }

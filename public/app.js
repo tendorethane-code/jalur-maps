@@ -142,9 +142,19 @@ function fitRoute(route) {
 }
 
 /* ---------- places ---------- */
+// The current trip survives a reload (switching map engine reloads the page).
+const session = {
+  get() { try { return JSON.parse(sessionStorage.getItem('jalur.trip')) || {}; } catch { return {}; } },
+  save() {
+    const pick = (p) => p && { point: p.point, main: p.main, sub: p.sub, gps: !!p.gps };
+    try { sessionStorage.setItem('jalur.trip', JSON.stringify({ from: pick(state.from), to: pick(state.to) })); } catch { /* ignore */ }
+  },
+};
+
 function setPlace(field, place) {
   state[field] = place;
   els[field].value = place ? place.main : '';
+  session.save();
   drawMarkers();
   if (field === 'to' && place) rememberRecent(place);
   maybeRoute();
@@ -576,7 +586,7 @@ function openPreview(k) {
       <button type="button" class="primary" data-pv="next">${k === r.junctions.length - 1 ? 'Selesai' : `Berikutnya${ICON.next}`}</button>
     </div>`;
   previewLayer.clear();
-  previewLayer.html(j.point, `<div class="m-arrow"><div>${svg('<path d="M12 3 5 20l7-4 7 4z" fill="currentColor"/>', 24, `style="transform:rotate(${j.bearing}deg)"`)}</div></div>`, { zIndex: 2000 });
+  previewLayer.html(j.point, `<div class="m-arrow"><div>${svg('<path d="M12 2.5 19 10h-4.5v11h-5V10H5z" fill="currentColor"/>', 26, `style="transform:rotate(${j.bearing}deg)"`)}</div></div>`, { zIndex: 2000 });
   // Keep the junction above the preview card: the map centre sits below it by half the card.
   const card = els.preview.getBoundingClientRect().height;
   map.flyTo(j.point, 18, isWide() ? [-200, 0] : [0, card / 2]);
@@ -644,6 +654,13 @@ new ResizeObserver(syncSearchHeight).observe(els.search);
 syncSearchHeight();
 render();
 
+// Put back the trip from before a reload. A GPS start is refreshed by locate() below instead.
+const resumed = session.get();
+if (resumed.to) { state.to = resumed.to; els.to.value = resumed.to.main; }
+if (resumed.from && !resumed.from.gps) { state.from = resumed.from; els.from.value = resumed.from.main; }
+drawMarkers();
+if (state.from && state.to) maybeRoute();
+
 // Opened from another app's Share menu (Android, installed app): use what was shared as the
 // destination. Google Maps shares "Name\nAddress\nhttps://maps.app.goo.gl/…".
 function handleShare() {
@@ -669,6 +686,7 @@ handleShare();
     const perm = await navigator.permissions?.query({ name: 'geolocation' });
     if (perm?.state === 'denied') return;
   } catch { /* Safari without the permissions API: just try */ }
+  if (state.from) return; // the rider picked a start before the reload: keep it
   locate({ quiet: true });
 })();
 
