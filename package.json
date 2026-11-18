@@ -1,0 +1,11 @@
+{
+  "name": "jalur",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pilih rute motor sebelum berangkat: jalan gede atau jalan tikus, lalu buka di Google Maps.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "node scripts/serve.js"
+  }
+}
