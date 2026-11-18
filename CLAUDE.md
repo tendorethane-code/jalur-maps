@@ -66,7 +66,16 @@ challenge weak assumptions and say plainly when something is unverified.
   gives `tollKm`, "Lewat tol"/"Tanpa tol" tags (only when there is a choice), "masuk/keluar tol"
   junction notes. Maps link `travelmode=driving`; Maps URLs can't say "avoid tolls", so a no-toll
   route relies on its waypoints. Mode is kept in localStorage `jalur.mode`.
-- "Jalan gede"/"Banyak gang" tags only when the gap is real (>= 8 points big road, >= 10% small).
+- Access vs jalan tikus (`markAccess`): small roads from the start until the first non-small stretch
+  >= 300 m, and from the last one to the end, are access (leaving the komplek, entering the
+  destination): unavoidable, every route has them. Small roads anywhere else = `midSmallKm`, the
+  jalan tikus the owner hates. Warnings, tags, card line ("1,0 km jalan tikus" / "Tanpa jalan tikus")
+  and the "kecil" stat use the mid-route figure; the bar still shows the total. Example: UI Depok ->
+  Pasar Minggu is 22% small roads on every route, all of it campus/destination access.
+- Car thresholds are stricter than motor (warn from 0.4 km mid-route vs 1 km). In car mode the
+  "terpendek" candidate is the one that repeats Google's mistake (Tebet -> Kemang: 1,9 km jalan tikus
+  to save 0,8 km); it stays as a clearly labelled option, never hidden and never the default.
+- "Jalan gede"/"Banyak gang" tags only when routes differ by >= 0.5 km of mid-route small road.
 - Google Maps puts touch listeners on the whole document; after a long-press on the map it
   preventDefault-ed the next touch anywhere, so the first tap on a field or button did nothing.
   map.js stops touches that start outside `#map` at window capture before Google loads.

@@ -159,6 +159,8 @@ const gmaps = (p) => p.$eval('.go', (a) => Object.fromEntries(new URL(a.href).se
     const carText = await q.$$eval('.rcard', (cs) => cs.map((c) => c.innerText).join(' | '));
     check('Mobil: toll and no-toll routes offered', /Lewat tol/.test(carText) && /Tanpa tol/.test(carText), carText.replace(/\n/g, ' ').slice(0, 160));
     check('Mobil: Maps link drives', (await gmaps(q)).travelmode === 'driving');
+    const tikus = await q.$$eval('.rcard', (cs) => cs.map((c) => c.querySelector('.rtikus')?.textContent || 'MISSING'));
+    check('Every card says whether it uses jalan tikus', tikus.every((t) => /jalan tikus/i.test(t)), tikus.join(' | '));
     await q.screenshot({ path: OUT + '5-car.png' });
     const tollIdx = await q.$$eval('.rcard', (cs) => cs.findIndex((c) => /Lewat tol/.test(c.innerText)));
     await tapSel(q, qcdp, `.rcard[data-i="${tollIdx}"]`);

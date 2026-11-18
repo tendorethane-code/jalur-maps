@@ -493,6 +493,9 @@ function routeCard(r, i) {
     <span class="rtime">${r.minutes}<small>mnt · ${formatKm(r.km)}</small></span>
     <span class="bar" aria-label="${r.pct.gede}% jalan gede, ${r.pct.sedang}% sedang, ${r.pct.kecil}% kecil">${bar}</span>
     <span class="rvia">${main ? `via <b>${esc(main.name)}</b>` : '&nbsp;'}</span>
+    ${r.midSmallKm >= (state.mode === 'mobil' ? 0.4 : 1)
+      ? `<span class="rtikus warn">${formatKm(r.midSmallKm)} jalan tikus</span>`
+      : '<span class="rtikus ok">Tanpa jalan tikus</span>'}
   </button>`;
 }
 
@@ -518,7 +521,8 @@ function detailHtml(r) {
     <div class="stats">
       <div class="stat gede"><b>${r.pct.gede}%</b><span>gede</span></div>
       <div class="stat sedang"><b>${r.pct.sedang}%</b><span>sedang</span></div>
-      <div class="stat kecil"><b>${r.pct.kecil}%</b><span>kecil</span></div>
+      <div class="stat kecil"><b>${r.pct.kecil}%</b><span>kecil</span>
+        <em>${r.midSmallKm >= 0.1 ? `${formatKm(r.midSmallKm)} di tengah` : 'cuma awal/akhir'}</em></div>
     </div>
     ${extraTags ? `<div style="margin-top:10px">${extraTags}</div>` : ''}
     <div class="section-label">Plus-minus</div>

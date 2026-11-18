@@ -87,6 +87,21 @@ export function stretches(edges) {
   return out;
 }
 
+/**
+ * Small roads at the very start and end are access: getting out of the komplek or kampung and
+ * into the destination. Every route has those and they can't be avoided. Small roads anywhere
+ * else are the jalan tikus a router chose to cut through: that is what riders complain about.
+ * Access runs from the start until the first non-small stretch of at least 300 m, and from the
+ * last such stretch to the end. Marks each stretch with `access: true|false`.
+ */
+export function markAccess(parts, minMainKm = 0.3) {
+  const isMain = (s) => s.group !== 'kecil' && s.km >= minMainKm;
+  for (const s of parts) s.access = false;
+  for (let i = 0; i < parts.length && !isMain(parts[i]); i++) parts[i].access = true;
+  for (let i = parts.length - 1; i >= 0 && !isMain(parts[i]); i--) parts[i].access = true;
+  return parts;
+}
+
 // Maneuver types (Valhalla): 9–16 are turns, 12/13 are U-turns, 26 enters a roundabout.
 const TURN_TYPES = new Set([9, 10, 11, 14, 15, 16, 26]);
 const UTURN_TYPES = new Set([12, 13]);
@@ -192,9 +207,11 @@ export function analyzeRoute(trip, trace) {
   };
   pct.sedang = 100 - pct.gede - pct.kecil;
 
-  const parts = stretches(edges);
-  // A "gang" stretch worth warning about: small road for at least 150 m.
-  const gangs = parts.filter((s) => s.group === 'kecil' && s.km >= 0.15);
+  const parts = markAccess(stretches(edges));
+  const small = parts.filter((s) => s.group === 'kecil');
+  const midSmall = small.filter((s) => !s.access);
+  // A "gang" worth warning about: a small-road stretch of at least 150 m in the middle of the route.
+  const gangs = midSmall.filter((s) => s.km >= 0.15);
   const maneuvers = trip.legs.flatMap((l) => l.maneuvers);
   const shape = decodePolyline(trace.shape);
 
@@ -206,6 +223,8 @@ export function analyzeRoute(trip, trace) {
     km: trip.summary.length,
     pct,
     groupKm: km,
+    midSmallKm: midSmall.reduce((t, s) => t + s.km, 0),
+    accessSmallKm: small.filter((s) => s.access).reduce((t, s) => t + s.km, 0),
     gangCount: gangs.length,
     longestGangKm: gangs.reduce((m, s) => Math.max(m, s.km), 0),
     unpavedKm,
@@ -251,12 +270,13 @@ export function tagRoutes(routes, mode = 'motor') {
   if (routes.length > 1) {
     const shortest = by((r) => -r.km);
     if (!shortest.tags.includes('tercepat')) shortest.tags.push('terpendek');
-    const big = by((r) => r.pct.gede);
-    const small = by((r) => r.pct.kecil);
-    // Only when it tells routes apart: 89% vs 88% big road, or 5% small road, is noise.
-    if (big !== small && big.pct.gede - small.pct.gede >= 8) {
+    // Judge by jalan tikus in the middle of the route, not by the unavoidable access roads.
+    const big = by((r) => -r.midSmallKm * 10 + r.pct.gede / 100);
+    const small = by((r) => r.midSmallKm);
+    // Only when it tells routes apart: a few hundred metres either way is noise.
+    if (big !== small && small.midSmallKm - big.midSmallKm >= 0.5) {
       big.tags.push('jalan gede');
-      if (small.pct.kecil >= 10) small.tags.push('banyak gang');
+      small.tags.push('banyak gang');
     }
     // Cars: say which routes use the toll road, but only when there is a choice.
     if (mode === 'mobil') {
@@ -290,16 +310,23 @@ export function prosCons(route, routes, mode = 'motor') {
   } else if (car && routes.some((r) => r.tollKm >= 1)) {
     plus.push('Gak bayar tol');
   }
-  // Small roads hurt more in a car (passing, parking), so the car warns earlier.
-  if (route.pct.kecil >= (car ? 20 : 35)) {
+  // Jalan tikus in the middle of the route. Small roads hurt more in a car (passing, turning,
+  // dead ends), so the car warns sooner.
+  const mid = route.midSmallKm ?? 0;
+  if (mid >= (car ? 0.4 : 1)) {
     minus.push(car
-      ? `Banyak jalan kecil (${route.pct.kecil}%), mobil bisa susah papasan`
-      : `Banyak jalan kecil (${route.pct.kecil}%), rawan bingung & papasan`);
-    plus.push('Bisa ngehindarin macet jalan raya');
+      ? `${formatKm(mid)} jalan kecil di tengah rute, mobil bisa susah papasan`
+      : `${formatKm(mid)} jalan tikus di tengah rute, rawan bingung & papasan`);
+    plus.push(car ? 'Bisa motong macet jalan raya, tapi sempit' : 'Bisa ngehindarin macet jalan raya');
+  } else if (route.gangCount === 0) {
+    plus.push(car ? 'Gak lewat jalan tikus' : 'Gak ada jalan tikus di tengah rute');
   }
-  if (route.gangCount === 0) plus.push(car ? 'Gak ada jalan sempit panjang' : 'Gak ada gang panjang');
-  else if (route.longestGangKm >= (car ? 0.3 : 0.5)) {
-    minus.push(`Ada ${car ? 'jalan sempit' : 'gang'} sepanjang ${formatKm(route.longestGangKm)}`);
+  if ((route.accessSmallKm ?? 0) >= 0.2 && mid < (car ? 0.4 : 1)) {
+    plus.push(`Jalan kecilnya cuma pas keluar/masuk lokasi (${formatKm(route.accessSmallKm)})`);
+  }
+  // The longest single stretch, unless it is (almost) all of the mid-route small roads already named.
+  if (route.longestGangKm >= (car ? 0.3 : 0.5) && route.longestGangKm < 0.9 * mid) {
+    minus.push(`Paling panjang ${formatKm(route.longestGangKm)} ${car ? 'jalan sempit' : 'gang'} nyambung`);
   }
   if (route.uturns) minus.push(`${route.uturns}× putar balik`);
   if (route.unpavedKm >= 0.2) minus.push(`${formatKm(route.unpavedKm)} jalan belum diaspal (menurut peta)`);

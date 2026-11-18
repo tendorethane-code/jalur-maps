@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   groupOf, decodePolyline, analyzeRoute, mainStreets, stretches, dedupe, tagRoutes,
-  prosCons, pickWaypoints, googleMapsUrl, shortName, formatKm, junctions, labelPoint, analyzeRoute as analyze,
+  prosCons, pickWaypoints, googleMapsUrl, shortName, formatKm, junctions, labelPoint, analyzeRoute as analyze, markAccess,
 } from '../public/lib/route-analysis.js';
 
 // Real Valhalla responses: motorcycle, Tebet -> Kemang (recorded 2026-11-18).
@@ -64,7 +64,7 @@ test('mainStreets drops short pieces and merges repeats', () => {
   assert.deepEqual(mainStreets(edges).map((s) => s.name), ['Jl. A', '(jalan kecil)']);
 });
 
-const fake = (o) => ({ minutes: 30, km: 10, pct: { gede: 50, sedang: 20, kecil: 30 }, gangCount: 1, longestGangKm: 0.2, uturns: 0, unpavedKm: 0, wayLengths: new Map(), ...o });
+const fake = (o) => ({ minutes: 30, km: 10, pct: { gede: 50, sedang: 20, kecil: 30 }, midSmallKm: 0.3, accessSmallKm: 0, gangCount: 1, longestGangKm: 0.2, uturns: 0, unpavedKm: 0, wayLengths: new Map(), ...o });
 
 test('dedupe removes routes on the same ways', () => {
   const a = fake({ wayLengths: new Map([[1, 5], [2, 5]]) });
@@ -74,8 +74,8 @@ test('dedupe removes routes on the same ways', () => {
 });
 
 test('tagRoutes marks what tells routes apart', () => {
-  const big = fake({ minutes: 28, km: 9.6, pct: { gede: 80, sedang: 15, kecil: 5 } });
-  const small = fake({ minutes: 31, km: 8.2, pct: { gede: 30, sedang: 20, kecil: 50 } });
+  const big = fake({ minutes: 28, km: 9.6, pct: { gede: 80, sedang: 15, kecil: 5 }, midSmallKm: 0.1 });
+  const small = fake({ minutes: 31, km: 8.2, pct: { gede: 30, sedang: 20, kecil: 50 }, midSmallKm: 3.1 });
   tagRoutes([big, small]);
   assert.deepEqual(big.tags, ['tercepat', 'jalan gede']);
   assert.deepEqual(small.tags, ['terpendek', 'banyak gang']);
@@ -85,16 +85,21 @@ test('tagRoutes marks what tells routes apart', () => {
 });
 
 test('prosCons explains the trade-off', () => {
-  const big = fake({ minutes: 28, km: 9.6, pct: { gede: 80, sedang: 15, kecil: 5 }, gangCount: 0 });
-  const small = fake({ minutes: 33, km: 8.2, pct: { gede: 30, sedang: 20, kecil: 50 }, gangCount: 4, longestGangKm: 0.7, uturns: 1 });
+  const big = fake({ minutes: 28, km: 9.6, pct: { gede: 80, sedang: 15, kecil: 5 }, midSmallKm: 0, accessSmallKm: 0.4, gangCount: 0, longestGangKm: 0 });
+  const small = fake({ minutes: 33, km: 8.2, pct: { gede: 30, sedang: 20, kecil: 50 }, midSmallKm: 3.1, gangCount: 4, longestGangKm: 0.7, uturns: 1 });
   const all = [big, small];
   const b = prosCons(big, all), s = prosCons(small, all);
   assert.ok(b.plus.some((t) => t.includes('jalan gede')));
   assert.ok(b.minus.some((t) => t.includes('macet')));
-  assert.ok(s.minus.some((t) => t.includes('50%')));
+  assert.ok(b.plus.includes('Gak ada jalan tikus di tengah rute'));
+  assert.ok(b.plus.some((t) => t.includes('cuma pas keluar/masuk lokasi (400 m)')));
+  assert.ok(s.minus.some((t) => t.includes('3,1 km jalan tikus di tengah rute')));
   assert.ok(s.minus.some((t) => t.includes('putar balik')));
   assert.ok(s.minus.some((t) => t.includes('+5 menit')));
-  assert.ok(s.minus.some((t) => t.includes('700 m')));
+  assert.ok(s.minus.some((t) => t.includes('Paling panjang 700 m gang nyambung')));
+  // One stretch that is all of the jalan tikus: said once, not twice.
+  const one = fake({ midSmallKm: 1.6, longestGangKm: 1.6, gangCount: 1 });
+  assert.equal(prosCons(one, [one], 'mobil').minus.filter((t) => t.includes('1,6 km')).length, 1);
 });
 
 test('pickWaypoints puts points on the route, in order', () => {
@@ -177,15 +182,16 @@ test('cars: toll routes are tagged only when there is a choice', () => {
 });
 
 test('cars: pros and cons talk about tolls and narrow roads', () => {
-  const toll = fake({ minutes: 54, km: 33, tollKm: 26.5, pct: { gede: 88, sedang: 10, kecil: 2 }, gangCount: 1, longestGangKm: 0.4 });
-  const free = fake({ minutes: 108, km: 40.4, tollKm: 0, pct: { gede: 60, sedang: 18, kecil: 22 }, gangCount: 2, longestGangKm: 0.2 });
+  const toll = fake({ minutes: 54, km: 33, tollKm: 26.5, pct: { gede: 88, sedang: 10, kecil: 2 }, midSmallKm: 0.4, gangCount: 1, longestGangKm: 0.4 });
+  const free = fake({ minutes: 108, km: 40.4, tollKm: 0, pct: { gede: 60, sedang: 18, kecil: 22 }, midSmallKm: 2.6, gangCount: 2, longestGangKm: 0.2 });
   const t = prosCons(toll, [toll, free], 'mobil');
   const f = prosCons(free, [toll, free], 'mobil');
   assert.ok(t.plus.some((x) => x.includes('Lewat tol 26,5 km')));
   assert.ok(t.minus.includes('Bayar tol'));
-  assert.ok(t.minus.some((x) => x.includes('jalan sempit sepanjang 400 m')));
+  // 400 m in one piece = all of the 400 m mid-route small road: named once.
+  assert.equal(t.minus.filter((x) => x.includes('400 m')).length, 1);
   assert.ok(f.plus.includes('Gak bayar tol'));
-  assert.ok(f.minus.some((x) => x.includes('mobil bisa susah papasan')));
+  assert.ok(f.minus.some((x) => x.includes('2,6 km jalan kecil di tengah rute, mobil bisa susah papasan')));
   // The motorbike wording is unchanged.
   assert.ok(!prosCons(free, [toll, free], 'motor').minus.some((x) => x.includes('mobil')));
 });
@@ -210,4 +216,24 @@ test('toll km and "masuk tol" come from edge.toll', () => {
 test('googleMapsUrl uses driving for cars', () => {
   assert.equal(new URL(googleMapsUrl(null, [-6.2, 106.8], [], 'mobil')).searchParams.get('travelmode'), 'driving');
   assert.equal(new URL(googleMapsUrl(null, [-6.2, 106.8])).searchParams.get('travelmode'), 'two-wheeler');
+});
+
+test('small roads at the start and end are access, the rest is jalan tikus', () => {
+  const S = (group, km) => ({ group, km });
+  const parts = markAccess([
+    S('kecil', 0.4), S('sedang', 0.1), S('kecil', 0.2), // still getting out: 100 m of sedang is not a main road
+    S('gede', 3), S('kecil', 1.2), S('gede', 2), // 1,2 km cut-through in the middle
+    S('sedang', 0.5), S('kecil', 0.3), // into the destination
+  ]);
+  assert.deepEqual(parts.map((p) => p.access), [true, true, true, false, false, false, false, true]);
+  // A trip that never leaves small roads is all access: nothing to choose there.
+  assert.ok(markAccess([S('kecil', 0.5), S('sedang', 0.2), S('kecil', 0.4)]).every((p) => p.access));
+});
+
+test('analyzeRoute on the real route splits access and mid-route small roads', () => {
+  const a = analyzeRoute(route.trip, trace);
+  const totalSmall = a.groupKm.kecil;
+  assert.ok(Math.abs(a.midSmallKm + a.accessSmallKm - totalSmall) < 1e-9);
+  // The route starts in a living street in Tebet and ends in Kemang lanes: that is access.
+  assert.ok(a.accessSmallKm > 0);
 });

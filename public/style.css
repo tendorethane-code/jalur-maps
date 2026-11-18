@@ -317,6 +317,9 @@ body:has(.suggestions:not([hidden])) .map-notice { display: none; }
 .bar .kecil { background: var(--kecil); }
 .rvia { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rvia b { color: var(--ink-2); font-weight: 600; }
+.rtikus { font-size: 12px; font-weight: 700; margin-top: -2px; }
+.rtikus.ok { color: var(--good); }
+.rtikus.warn { color: var(--kecil); }
 
 /* Selected route details */
 .detail { margin-top: 12px; }
@@ -324,6 +327,7 @@ body:has(.suggestions:not([hidden])) .map-notice { display: none; }
 .stat { background: var(--sunken); border-radius: var(--r-sm); padding: 9px 10px; }
 .stat b { display: block; font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
 .stat span { font-size: 12px; color: var(--muted); }
+.stat em { display: block; font-style: normal; font-size: 11.5px; font-weight: 600; color: var(--ink-2); margin-top: 2px; }
 .stat.gede b { color: var(--gede); }
 .stat.kecil b { color: var(--kecil); }
 .stat.sedang b { color: var(--sedang); }
