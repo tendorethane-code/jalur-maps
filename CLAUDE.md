@@ -33,6 +33,17 @@ challenge weak assumptions and say plainly when something is unverified.
   Playwright needs the agent proxy:
   `chromium.launch({ proxy: { server: process.env.HTTPS_PROXY, bypass: 'localhost' } })`.
 
+## Cek rilis (`/cek-rilis`)
+The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every repo). This repo's part:
+- Release = push to `main`. Back out = revert + redeploy (minutes), but installed PWAs keep the old
+  shell until `CACHE` in `public/sw.js` is bumped.
+- Risk is usually LOW: static site, one user, no server data. MEDIUM when a change touches `sw.js`,
+  `config.js`/the Google key, trip/mode storage, or taps/long-press/sheet gestures.
+- Always: `npm test`; `node test/e2e/qa.cjs --osm` for UI changes (Google run only if the map or
+  Google search changed: quota); `CACHE` bumped if shell files changed; 320–390 px, dark, ≥900 px.
+- [luar], owner only: taps and long-press on the Android phone; the Maps link opening Google Maps.
+- Not relevant here: DB backup/migration, installers, checksums, signing.
+
 ## Gotchas
 - Google map is forced to `renderingType: RASTER` (vector needs WebGL). Dark mode = `colorScheme`.
 - Google Places results may only be shown on a Google map, so Google search runs only in Google
