@@ -96,10 +96,15 @@ challenge weak assumptions and say plainly when something is unverified.
   click: a touch pointerdown isn't a user activation). "Near/Dekat Jl. X" is searched but flagged
   as rough. Decimal-comma coordinates ("-6,30, 106,65") are read too. UNVERIFIED: what Google Maps
   on the owner's phone really sends for a dropped pin; the raw text on screen will tell. A
-  short-link resolver would need a server (e.g. a Cloudflare Worker): only if this is common.
+  short-link resolver would need a server (e.g. a Cloudflare Worker) or the APK: the link 302s to
+  a google.com/maps/place/... URL with `!3d…!4d…` (checked on a real one), but sends no CORS header.
+- WhatsApp location bubble -> Android asks which app (Maps, Waze, Grab, Gojek, Maxim): almost
+  surely a `geo:` intent with coordinates. A Chrome-installed PWA can't register for `geo:`
+  (protocol handlers are desktop-only); a TWA APK with a `geo` intent filter could.
 - WhatsApp location bubbles can't be shared to other apps; they open Google Maps, share from there.
-- Traffic ("Macet" button, Google map only, `jalur.traffic`): Google's `TrafficLayer` (live,
-  car speeds; motors filter through). With it on, routes are drawn as see-through bands so the
+- Traffic ("Macet" button in the route list header, Google map only, `jalur.traffic`): Google's
+  `TrafficLayer` (live, car speeds; motors filter through). Not a floating map button: on phones
+  it covered time bubbles, and padding the fit for it zoomed the short map strip far out. With it on, routes are drawn as see-through bands so the
   traffic colour of the road underneath stays readable; road-size colours return when it's off.
   Gives no minutes. Real traffic minutes would need the Routes API (separate SKU, not enabled).
 - The Maps link sends the destination as coordinates, so Google labels it with the nearest shop

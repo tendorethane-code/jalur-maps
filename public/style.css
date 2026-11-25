@@ -197,34 +197,6 @@ svg { flex: none; }
 .s-sub { display: block; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .s-note { padding: 10px 12px; color: var(--muted); font-size: 14px; white-space: pre-line; overflow-wrap: anywhere; }
 
-/* ---------- Traffic toggle (Google map only) ---------- */
-/* Under the search card on the right. Below the sheet (z 999) so a full sheet covers it. */
-.traffic {
-  position: fixed; z-index: 998; right: 12px;
-  top: calc(var(--search-h, 112px) + 20px + var(--safe-top));
-  display: flex; flex-direction: row-reverse; align-items: center; gap: 6px;
-}
-.traffic-btn {
-  display: flex; align-items: center; gap: 6px; min-height: 40px; flex: none;
-  border: 0; border-radius: 999px; padding: 0 14px 0 11px;
-  background: var(--surface); color: var(--ink-2); box-shadow: var(--shadow-1);
-  font: inherit; font-size: 14px; font-weight: 700;
-}
-.traffic-btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
-/* One line next to the button: the phone's map strip between search card and sheet is short. */
-.traffic-legend {
-  display: flex; align-items: center; gap: 8px; white-space: nowrap;
-  background: var(--surface); color: var(--ink-2); box-shadow: var(--shadow-1);
-  border-radius: 999px; padding: 6px 10px; font-size: 11px; font-weight: 600;
-}
-.traffic-legend span { display: flex; align-items: center; gap: 4px; }
-.traffic-legend i { width: 12px; height: 4px; border-radius: 2px; }
-.traffic-legend small { color: var(--muted); font-weight: 500; font-size: 10px; margin-left: -4px; }
-.traffic-legend[hidden], .traffic-btn[hidden] { display: none; }
-body:has(.suggestions:not([hidden])) .traffic,
-body:has(.map-notice) .traffic,
-body:has(.preview:not([hidden])) .traffic { display: none; }
-
 /* ---------- Pick-on-map banner ---------- */
 .pick-banner {
   position: fixed; z-index: 1001; left: 50%; bottom: calc(24px + var(--safe-bottom));
@@ -308,6 +280,18 @@ body:has(.suggestions:not([hidden])) .map-notice { display: none; }
 .legend { display: flex; gap: 10px; font-size: 12px; color: var(--muted); font-weight: 500; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 9px; height: 9px; border-radius: 50%; }
+/* With the Macet button (Google map only) the legend gets its own line under the title. */
+.results-head.has-traffic { flex-wrap: wrap; row-gap: 6px; }
+.results-head.has-traffic .legend { order: 3; flex-basis: 100%; flex-wrap: wrap; row-gap: 2px; }
+.legend.traffic-legend i { width: 14px; height: 4px; border-radius: 2px; }
+.legend small { font-size: 11px; }
+.traffic-btn {
+  display: inline-flex; align-items: center; gap: 5px; flex: none; min-height: 34px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 0 12px 0 9px;
+  background: var(--surface); color: var(--ink-2);
+  font: inherit; font-size: 13px; font-weight: 700;
+}
+.traffic-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
 /* Route carousel */
 .carousel {
@@ -435,11 +419,9 @@ body:has(.suggestions:not([hidden])) .map-notice { display: none; }
   .sheet-body { padding-top: 16px; }
   .sheet-cta { border-radius: 0 0 var(--r-xl) var(--r-xl); }
   .leaflet-top { top: 4px; }
-  .traffic { top: 12px; right: 62px; } /* left of Google's zoom buttons */
   .preview { left: 16px; right: auto; width: 392px; bottom: 16px; }
 }
 @media (max-width: 350px) {
-  .traffic-legend small { display: none; }
   .rcard { width: 162px; }
   .how { grid-template-columns: 1fr; }
   .how div { display: flex; gap: 10px; align-items: center; }

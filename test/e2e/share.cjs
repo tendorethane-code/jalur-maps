@@ -47,7 +47,7 @@ async function page(b, { google = false, query = '', width } = {}) {
   check('Short link share explains', /gak bawa koordinat/.test(txt), txt.slice(0, 80));
   check('Short link share shows what came in', /Yang dikirim: [\s\S]*maps\.app\.goo\.gl/.test(txt));
   check('Short link share offers paste', (await pasteIndex(p)) >= 0);
-  check('Traffic button hidden on OSM', await p.$eval('#traffic', (e) => e.hidden));
+  check('Traffic button absent on OSM', !(await p.$('[data-action="traffic"]')));
   await p.screenshot({ path: OUT + '1-shortlink.png' });
 
   // 2. Paste coordinates with decimal commas from the clipboard -> destination set.
@@ -69,6 +69,20 @@ async function page(b, { google = false, query = '', width } = {}) {
   await tapSel(p, cdp, `#suggestions button[data-i="${await pasteIndex(p)}"]`);
   await p.waitForTimeout(400);
   check('Pasted short link explains', /gak bawa koordinat/.test(await suggestText(p)));
+
+  // 4b. Share text with a name pasted into the field (the field glues the lines): search the name.
+  await p.fill('#to', 'Stasiun Tebethttps://maps.app.goo.gl/x');
+  await p.waitForTimeout(300);
+  check('Pasted name + short link searches the name', (await p.$eval('#to', (e) => e.value)) === 'Stasiun Tebet');
+
+  // 4c. Clipboard holds a nameless pin "near" a street: search the street, flagged rough.
+  await p.evaluate(() => navigator.clipboard.writeText('Dropped pin\nNear Jl. Margonda Raya\nhttps://maps.app.goo.gl/x'));
+  await p.fill('#to', '');
+  await p.$eval('#to', (e) => e.dispatchEvent(new Event('input')));
+  await p.waitForTimeout(200);
+  await tapSel(p, cdp, `#suggestions button[data-i="${await pasteIndex(p)}"]`);
+  await p.waitForTimeout(300);
+  check('Pasted "near" pin searches the street', (await p.$eval('#to', (e) => e.value)) === 'Jl. Margonda Raya' && /kira-kira/.test(await suggestText(p)));
 
   // 5. Empty field: paste row is in the base list for the destination only.
   await p.fill('#to', '');
@@ -97,21 +111,22 @@ async function page(b, { google = false, query = '', width } = {}) {
     check('Google engine', (await p.evaluate(() => document.body.dataset.map)) === 'google');
     await p.waitForSelector('.rcard', { timeout: 40000 });
     await p.waitForTimeout(2000);
-    check('Traffic button shown on Google', !(await p.$eval('#traffic', (e) => e.hidden)) && await p.$eval('#traffic', (e) => e.offsetHeight > 0));
+    check('Traffic button shown on Google', await p.$eval('[data-action="traffic"]', (e) => e.offsetHeight > 0));
     const trafficTiles = [];
     p.on('request', (r) => { if (/traffic|lyrs=[^&]*traffic|vt\?.*traffic/i.test(r.url())) trafficTiles.push(r.url()); });
-    await tapSel(p, cdp, '#traffic');
+    await tapSel(p, cdp, '[data-action="traffic"]');
     await p.waitForTimeout(3500);
-    check('Traffic on: pressed + legend', (await p.$eval('#traffic', (e) => e.getAttribute('aria-pressed'))) === 'true' && !(await p.$eval('#traffic-legend', (e) => e.hidden)));
+    check('Traffic on: pressed + legend', (await p.$eval('[data-action="traffic"]', (e) => e.getAttribute('aria-pressed'))) === 'true' && !!(await p.$('.traffic-legend')));
+    check('Routes still listed', (await p.$$('.rcard')).length >= 2);
     check('Traffic tiles requested', trafficTiles.length > 0, `${trafficTiles.length} requests`);
     await p.screenshot({ path: OUT + '3-traffic.png' });
     await p.reload();
-    await p.waitForFunction(() => document.body.dataset.map, null, { timeout: 25000 });
+    await p.waitForSelector('[data-action="traffic"]', { timeout: 40000 });
     await p.waitForTimeout(2500);
-    check('Traffic choice survives reload', (await p.$eval('#traffic', (e) => e.getAttribute('aria-pressed'))) === 'true');
-    await tapSel(p, cdp, '#traffic');
+    check('Traffic choice survives reload', (await p.$eval('[data-action="traffic"]', (e) => e.getAttribute('aria-pressed'))) === 'true');
+    await tapSel(p, cdp, '[data-action="traffic"]');
     await p.waitForTimeout(500);
-    check('Traffic off again', (await p.$eval('#traffic', (e) => e.getAttribute('aria-pressed'))) === 'false' && await p.$eval('#traffic-legend', (e) => e.hidden));
+    check('Traffic off again', (await p.$eval('[data-action="traffic"]', (e) => e.getAttribute('aria-pressed'))) === 'false' && !(await p.$('.traffic-legend')));
     check('No page errors (Google)', !p.errors.length, p.errors.join(' | '));
     await ctx.close();
   }

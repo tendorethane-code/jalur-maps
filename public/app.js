@@ -11,7 +11,6 @@ const $ = (id) => document.getElementById(id);
 const els = {
   search: $('search'), from: $('from'), to: $('to'), locate: $('locate'), swap: $('swap'),
   suggestions: $('suggestions'), sheet: $('sheet'), grab: $('sheet-grab'), body: $('sheet-body'), cta: $('sheet-cta'),
-  traffic: $('traffic'), trafficLegend: $('traffic-legend'),
   pickBanner: $('pick-banner'), pickText: $('pick-text'), pickCancel: $('pick-cancel'), preview: $('preview'),
 };
 
@@ -64,6 +63,7 @@ const ICON = {
   prev: svg(stroke('m15 6-6 6 6 6'), 16),
   next: svg(stroke('m9 6 6 6-6 6'), 16),
   go: svg('<path d="M3 11.5 21 3l-8.5 18-2-7.5z" fill="currentColor"/>', 18),
+  traffic: svg('<rect x="7.5" y="2.5" width="9" height="19" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="7.5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="16.5" r="1.6" fill="currentColor"/>', 16),
   paste: svg(stroke('M9 4h6v3H9zM9 5.5H6.5v15h11v-15H15M9 12h6m-6 4h4')),
   toll: svg(stroke('M4 20V9l8-5 8 5v11M4 13h16M9 20v-4h6v4'), 13),
   noToll: svg(stroke('M4 20V9l8-5 8 5v11M4 4l16 16'), 13),
@@ -95,17 +95,15 @@ map.onNoTiles?.(() => {
 // Traffic (Google map only): Google's live colours on the roads. Our route lines would cover
 // exactly the roads we want to read, so with traffic on the routes become a see-through band.
 let trafficOn = !!map.setTraffic && store.get('jalur.traffic', false);
+// The button sits in the route list header (see resultsHead), not on the map: the phone's map
+// strip between search card and sheet is short, and a floating button covered time bubbles.
 function setTraffic(on) {
   trafficOn = on;
   store.set('jalur.traffic', on);
   map.setTraffic(on);
-  els.traffic.setAttribute('aria-pressed', String(on));
-  els.trafficLegend.hidden = !on;
+  const head = els.body.querySelector('.results-head');
+  if (head) head.outerHTML = resultsHead();
   drawRoutes(false);
-}
-if (map.setTraffic) {
-  els.traffic.hidden = false;
-  els.traffic.addEventListener('click', () => setTraffic(!trafficOn));
 }
 
 const dark = window.matchMedia('(prefers-color-scheme: dark)');
@@ -187,6 +185,7 @@ const session = {
 };
 
 function setPlace(field, place) {
+  if (approxShare?.field === field) approxShare = null;
   state[field] = place;
   els[field].value = place ? place.main : '';
   session.save();
@@ -238,7 +237,7 @@ function placeRow(it, attrs) {
 function showSuggestions(items, note) {
   suggestionItems = items;
   els.suggestions.classList.remove('stale');
-  els.suggestions.innerHTML = items.map((it, i) => `<li>${placeRow(it, `role="option" data-i="${i}"`)}</li>`).join('')
+  els.suggestions.innerHTML = items.map((it, i) => `<li>${placeRow(it, `role="option" data-i="${i}"${it.action ? ` data-action="${it.action}"` : ''}`)}</li>`).join('')
     + (note ? `<li class="s-note">${esc(note)}</li>` : '');
   els.suggestions.hidden = !items.length && !note;
 }
@@ -250,29 +249,43 @@ const SHORT_LINK_HELP = `Link pendek Google Maps gak bawa koordinat, jadi Jalur 
 const pasteRow = () => ({ icon: ICON.paste, accent: true, main: 'Tempel koordinat', sub: 'Yang kamu salin dari Google Maps', action: 'paste' });
 const pickRow = () => ({ icon: ICON.map, accent: true, main: 'Pilih di peta', sub: 'Ketuk titiknya di peta', action: 'pick' });
 
-let approxShare = null; // the query of a "near <street>" share, see handleShare
+let approxShare = null; // { field, q } of a "near <street>" share: say it's rough, see runSearch
+
+// Text from a share, the clipboard or pasted into a field, after parseShared: coordinates set
+// the place, a name is searched, a bare short link asks for coordinates. False if nothing usable.
+function useShared(field, shared, raw = '') {
+  if (!shared) return false;
+  if (shared.point) {
+    closeSuggestions();
+    document.activeElement?.blur();
+    placeAt(field, shared.point);
+    return true;
+  }
+  state.activeField = field;
+  if (shared.needsCoords) {
+    // Show what came in, so a share format we don't know yet can be reported and handled.
+    showSuggestions([pasteRow(), pickRow()], raw ? `${SHORT_LINK_HELP}\n\nYang dikirim: ${raw}` : SHORT_LINK_HELP);
+    return true;
+  }
+  const q = shared.query.slice(0, 120);
+  els[field].value = q;
+  approxShare = shared.approx ? { field, q } : null;
+  showSuggestions([...(shared.approx ? [pasteRow()] : []), ...actionRows(q)], shared.approx ? approxNote(q) : `Nyari "${q}"…`);
+  runSearch(field, q);
+  return true;
+}
+const approxNote = (q) => `Pin tanpa nama, cuma "dekat ${q}": hasilnya kira-kira aja. Biar pas, tempel koordinatnya.`;
 
 async function pasteLocation(field) {
   let text;
   try {
     text = await navigator.clipboard.readText();
   } catch {
-    showSuggestions([pickRow()], 'Jalur gak bisa baca yang kamu salin. Tahan lama kolomnya, lalu pilih Tempel.');
+    if (state.activeField === field) showSuggestions([pickRow()], 'Jalur gak bisa baca yang kamu salin. Tahan lama kolomnya, lalu pilih Tempel.');
     return;
   }
   if (state.activeField !== field) return;
-  const point = parseCoordinates(text);
-  if (point) {
-    closeSuggestions();
-    document.activeElement?.blur();
-    placeAt(field, point);
-    return;
-  }
-  if (hasShortMapsLink(text)) return showSuggestions([pasteRow(), pickRow()], SHORT_LINK_HELP);
-  const q = (text || '').trim().split(/\n/)[0].slice(0, 120);
-  if (!q) return showSuggestions([pasteRow(), pickRow()], `Belum ada yang disalin. ${COPY_HOW}`);
-  els[field].value = q;
-  onInput(field);
+  if (!useShared(field, parseShared({ text }))) showSuggestions([pasteRow(), pickRow()], `Belum ada yang disalin. ${COPY_HOW}`);
 }
 
 function baseSuggestions(field) {
@@ -312,9 +325,9 @@ const runSearch = debounce(async (field, q) => {
     }
     results ||= await searchPlaces(q, nearPoint(), signal);
     if (signal.aborted || state.activeField !== field || els[field].value.trim() !== q) return;
-    if (approxShare === q) {
+    if (approxShare?.field === field && approxShare.q === q) {
       // Shared as "near <street>": keep saying it's rough and keep the paste row on top.
-      showSuggestions([pasteRow(), ...results, ...actionRows(q)], `Pin tanpa nama, cuma "dekat ${q}": hasilnya kira-kira aja. Biar pas, tempel koordinatnya.`);
+      showSuggestions([pasteRow(), ...results, ...actionRows(q)], approxNote(q));
       return;
     }
     showSuggestions([...results, ...actionRows(q)], results.length ? '' : 'Gak ketemu di pencarian cepat. Coba "Cari lebih teliti", atau pilih di peta.');
@@ -340,7 +353,8 @@ async function runDeepSearch(field, q) {
 function onInput(field) {
   const q = els[field].value.trim();
   if (q.length < 3) { searchAbort?.abort(); showSuggestions(baseSuggestions(field)); return; }
-  if (hasShortMapsLink(q) && !parseCoordinates(q)) { searchAbort?.abort(); showSuggestions([pasteRow(), pickRow()], SHORT_LINK_HELP); return; }
+  // Google Maps share text pasted into the field: use the name in it, or explain the bare link.
+  if (hasShortMapsLink(q) && !parseCoordinates(q)) { searchAbort?.abort(); useShared(field, parseShared({ text: q })); return; }
   // Keep showing the previous results while the new ones load, like Google Maps does.
   if (!suggestionItems.some((s) => !s.action)) showSuggestions(actionRows(q), 'Nyari…');
   else els.suggestions.classList.add('stale'); // old results stay visible but faded until new ones land
@@ -404,7 +418,7 @@ els.suggestions.addEventListener('pointerdown', (e) => {
   if (!b) return;
   e.preventDefault();
   // Reading the clipboard needs a real tap (a touch pointerdown doesn't count): do it on click.
-  if (suggestionItems[Number(b.dataset.i)]?.action === 'paste') { e.stopPropagation(); return; }
+  if (b.dataset.action === 'paste') { e.stopPropagation(); return; }
   // Stop here: choosing can replace the list, and the document handler below would then see
   // a detached target, think the tap was outside the search card, and close everything.
   e.stopPropagation();
@@ -416,8 +430,8 @@ els.suggestions.addEventListener('pointerdown', (e) => {
 // the tap's click to whatever moved under the finger. On the owner's phone that was the
 // "Pakai peta cadangan" button, which silently switched maps. Eat that one click.
 els.suggestions.addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-i]');
-  if (b && suggestionItems[Number(b.dataset.i)]?.action === 'paste') chooseSuggestion(Number(b.dataset.i));
+  // The button itself says it's paste: the list may have re-rendered since pointerdown.
+  if (e.target.closest('button[data-action="paste"]') && state.activeField) pasteLocation(state.activeField);
 });
 function swallowNextClick() {
   const eat = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
@@ -619,7 +633,17 @@ function renderDetail() {
 }
 
 function legend() {
+  if (trafficOn) {
+    return `<div class="legend traffic-legend" title="Kepadatan dari Google, diukur buat mobil. Motor biasanya lebih cepet."><span><i style="background:#1e9e4a"></i>lancar</span><span><i style="background:#f29a1f"></i>padat</span><span><i style="background:#e0362c"></i>macet</span><small>data Google, kepadatan mobil</small></div>`;
+  }
   return `<div class="legend"><span><i style="background:var(--gede)"></i>gede</span><span><i style="background:var(--sedang)"></i>sedang</span><span><i style="background:var(--kecil)"></i>kecil</span></div>`;
+}
+
+function resultsHead() {
+  const btn = map.setTraffic
+    ? `<button type="button" class="traffic-btn" data-action="traffic" aria-pressed="${trafficOn}" title="Warna kepadatan jalan dari Google">${ICON.traffic}Macet</button>`
+    : '';
+  return `<div class="results-head${btn ? ' has-traffic' : ''}"><h2>${state.routes.length} pilihan rute</h2>${legend()}${btn}</div>`;
 }
 
 function render() {
@@ -634,7 +658,7 @@ function render() {
     return;
   }
   if (state.routes.length) {
-    els.body.innerHTML = `<div class="results-head"><h2>${state.routes.length} pilihan rute</h2>${legend()}</div>
+    els.body.innerHTML = `${resultsHead()}
       <div class="carousel" id="carousel">${state.routes.map(routeCard).join('')}</div>
       <div class="detail"></div>`;
     renderDetail();
@@ -681,6 +705,7 @@ function bindCarousel() {
 
 els.body.addEventListener('click', (e) => {
   if (e.target.closest('[data-action="retry"]')) return computeRoutes();
+  if (e.target.closest('[data-action="traffic"]')) return setTraffic(!trafficOn);
   if (e.target.closest('[data-action="google"]')) { e.preventDefault(); return useGoogleMap(); }
   const recent = e.target.closest('[data-recent]');
   if (recent) {
@@ -796,24 +821,7 @@ function handleShare() {
   if (!['title', 'text', 'url'].some((k) => params.get(k))) return;
   history.replaceState(null, '', location.pathname);
   const shared = parseShared({ title: params.get('title') || '', text: params.get('text') || '', url: params.get('url') || '' });
-  if (!shared) return;
-  if (shared.point) {
-    placeAt('to', shared.point);
-    return;
-  }
-  state.activeField = 'to';
-  if (shared.needsCoords) {
-    // Show what came in, so a share format we don't know yet can be reported and handled.
-    showSuggestions([pasteRow(), pickRow()], `${SHORT_LINK_HELP}\n\nYang dikirim: ${shared.raw.replace(/\s*\n\s*/g, " · ").slice(0, 160)}`);
-    return;
-  }
-  els.to.value = shared.query;
-  if (shared.approx) approxShare = shared.query;
-  const note = shared.approx
-    ? `Pin tanpa nama, cuma "dekat ${shared.query}": hasilnya kira-kira aja. Biar pas, tempel koordinatnya.`
-    : `Nyari "${shared.query}" dari Google Maps…`;
-  showSuggestions([...(shared.approx ? [pasteRow()] : []), ...actionRows(shared.query)], note);
-  runSearch('to', shared.query);
+  useShared('to', shared, shared?.raw?.replace(/\s*\n\s*/g, ' · ').slice(0, 160));
 }
 handleShare();
 

@@ -82,12 +82,15 @@ const PIN_LABEL = /^(dropped pin|pin (lokasi|yang dilepas|dilepas|yang dijatuhka
 export function parseShared({ title = '', text = '', url = '' } = {}) {
   const all = [title, text, url].filter(Boolean).join('\n');
   const point = parseCoordinates(all);
-  const lines = all.split(/\n+/).map((l) => l.trim())
-    .filter((l) => l && !/^https?:\/\//i.test(l) && !PIN_LABEL.test(l));
+  // Links on their own line: a one-line text field glues "Stasiun Tebet" and the link together.
+  const raw = all.replace(/https?:\/\/\S+/g, '\n').split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const lines = raw.filter((l) => !PIN_LABEL.test(l));
   const name = lines[0] || '';
   if (point) return { point, name };
+  // "Near …" only means a nameless pin when Google also said it was a pin, or gave no address
+  // line: a real place can be called "Sekitar Kita Coffee".
   const near = name.match(/^(near|dekat|di dekat|sekitar)\s+(.+)/i);
-  if (near) return { query: near[2], address: lines[1] || '', approx: true };
+  if (near && (lines.length < raw.length || lines.length === 1)) return { query: near[2], address: lines[1] || '', approx: true };
   if (name) return { query: name, address: lines[1] || '' };
   if (hasShortMapsLink(all)) return { needsCoords: true, raw: all.trim() };
   return null;

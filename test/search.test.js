@@ -29,6 +29,9 @@ test('parseCoordinates reads typed coordinates and Google Maps links', () => {
   assert.deepEqual(parseCoordinates('-6.301234,106.652100'), [-6.301234, 106.6521]);
   assert.deepEqual(parseCoordinates('https://www.google.com/maps/place/X/@-6.2401,106.6531,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d-6.2405!4d106.6537'), [-6.2405, 106.6537]);
   assert.deepEqual(parseCoordinates('https://maps.google.com/?q=-6.21,106.82'), [-6.21, 106.82]);
+  // Where a maps.app.goo.gl short link redirects to (real shape, coordinates changed): a
+  // server or native app that follows the redirect could read the point from it.
+  assert.deepEqual(parseCoordinates('https://www.google.com/maps/place/Jl.+Contoh+1,+RT.10%2FRW.10,+Jakarta+Barat/data=!4m6!3m5!1s0x2e69f8:0xdf3b!7e2!8m2!3d-6.1801234!4d106.7205678?utm_source=mstt_1&entry=gps'), [-6.1801234, 106.7205678]);
   assert.deepEqual(parseCoordinates('https://www.google.com/maps/@-6.30,106.65,15z'), [-6.3, 106.65]);
   assert.equal(parseCoordinates('https://maps.app.goo.gl/AbCdEf123'), null); // short link: no coordinates
   assert.equal(parseCoordinates('48.8584, 2.2945'), null); // Paris is not Jabodetabek
@@ -55,6 +58,13 @@ test('parseShared: a nameless pin as a short link asks for coordinates', () => {
     { query: 'Jl. Mawar, Ciputat', address: '', approx: true });
   // Coordinates on their own line win over everything.
   assert.deepEqual(parseShared({ text: 'Dropped pin\n-6.301234, 106.6521\nhttps://maps.app.goo.gl/x' }).point, [-6.301234, 106.6521]);
+});
+
+test('parseShared: pasted share text glued onto one line, and real names starting with "Sekitar"', () => {
+  assert.deepEqual(parseShared({ text: 'Stasiun Tebethttps://maps.app.goo.gl/x' }), { query: 'Stasiun Tebet', address: '' });
+  assert.deepEqual(parseShared({ text: 'Sekitar Kita Coffee\nJl. Kemang Raya 5\nhttps://maps.app.goo.gl/x' }),
+    { query: 'Sekitar Kita Coffee', address: 'Jl. Kemang Raya 5' });
+  assert.equal(parseShared({ text: 'Near Jl. Mawar\nhttps://maps.app.goo.gl/x' }).approx, true);
 });
 
 test('hasShortMapsLink', () => {
