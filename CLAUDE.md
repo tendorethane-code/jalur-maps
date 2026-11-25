@@ -108,6 +108,12 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
   map.js stops touches that start outside `#map` at window capture before Google loads.
 - fitRoute fits all routes (+32 px for bubbles): fitting only the selected one left another
   route's bubble under the search card.
+- Route search speed: the server is in Germany, so each round trip costs most on a phone.
+  `distinctTrips` drops practically identical candidates first (shape within ~15 m for 97 %;
+  35 m / 90 % wrongly merged the motor "terpendek" Tebet -> Kemang, a parallel road), then all
+  (max 5) `trace_attributes` go out in one round, instead of two at a time. Same routes as before
+  on 6 test trips. `routeCache` in app.js keeps each mode's routes for the visit, so switching
+  Motor <-> Mobil back is instant (6 ms, 0 requests in share.cjs).
 - Valhalla's public server answers 429 to bursts (seen after many test runs): `post()` retries
   twice with backoff, then says the server is busy in plain words.
 - **Google quota:** a day of repeated Google QA runs used up the owner's Maps JS daily quota; the
@@ -121,10 +127,16 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
   link: no coordinates, and a browser can't open it (cross-origin redirect). Jalur then says so,
   shows the raw shared text ("Yang dikirim: …") and offers "Tempel koordinat" (clipboard, read on
   click: a touch pointerdown isn't a user activation). "Near/Dekat Jl. X" is searched but flagged
-  as rough. Decimal-comma coordinates ("-6,30, 106,65") are read too. UNVERIFIED: what Google Maps
-  on the owner's phone really sends for a dropped pin; the raw text on screen will tell. A
-  short-link resolver would need a server (e.g. a Cloudflare Worker) or the APK: the link 302s to
-  a google.com/maps/place/... URL with `!3d…!4d…` (checked on a real one), but sends no CORS header.
+  as rough. Decimal-comma coordinates ("-6,30, 106,65") are read too. VERIFIED on the owner's phone:
+  Google Maps shares a dropped pin as the bare link only (`https://maps.app.goo.gl/…?g_st=aw`).
+- Short-link resolver: `resolver/worker.js`, a Cloudflare Worker (owner's account), URL in
+  `public/config.js` `RESOLVER` (empty = off, old "paste coordinates" flow). The link 302s to
+  `google.com/maps/place/<name>/data=…!3d<lat>!4d<lon>`, without CORS, so a page can't read it.
+  The Worker only takes maps.app.goo.gl / goo.gl/maps links, only follows Google hosts, unwraps
+  consent.google.com, and answers CORS only for github.io + localhost:5173. Jalur names the place
+  from the URL (`placeFromMapsUrl`, drops RT/RW and postcode) and prefers the link over searching
+  the shared name. Resolver down or 10 s timeout -> "Link … gak bisa dibuka sekarang" + old flow.
+  Tested: `test/resolver.test.js` (fake fetch) and both of the owner's real links (~0.5 s each).
 - WhatsApp location bubble -> Android asks which app (Maps, Waze, Grab, Gojek, Maxim): almost
   surely a `geo:` intent with coordinates. A Chrome-installed PWA can't register for `geo:`
   (protocol handlers are desktop-only); a TWA APK with a `geo` intent filter could.

@@ -1,6 +1,6 @@
 // Network calls: Valhalla (routing, FOSSGIS public server) and Photon (place search).
 // Both are free public services run by volunteers; keep requests few and polite.
-import { analyzeRoute, dedupe, tagRoutes, pickWaypoints, labelPoint, MODES } from './route-analysis.js';
+import { analyzeRoute, dedupe, distinctTrips, tagRoutes, pickWaypoints, labelPoint, MODES } from './route-analysis.js';
 import { normalizeQuery, stripAddressDetails, parseCoordinates, rankPlaces } from './search.js';
 
 const VALHALLA = 'https://valhalla1.openstreetmap.de';
@@ -118,19 +118,18 @@ async function candidateTrips(from, to, signal, mode) {
 /** Analyzed, deduplicated, tagged routes, fastest first. */
 export async function findRoutes(from, to, { signal, mode = 'motor' } = {}) {
   const costing = (MODES[mode] || MODES.motor).costing;
-  const trips = await candidateTrips(from, to, signal, mode);
+  // Near-identical candidates (alternatives often are) are dropped before asking for their
+  // road details, and the rest are asked for in one go: every round trip to the server in
+  // Germany costs the most on a phone network. It used to be two at a time, up to 4 rounds.
+  const trips = distinctTrips(await candidateTrips(from, to, signal, mode), { max: 5 });
   const routes = [];
-  // Two at a time so we don't hammer the public server.
-  for (let i = 0; i < trips.length; i += 2) {
-    const batch = trips.slice(i, i + 2);
-    const traced = await Promise.allSettled(batch.map((t) => traceAttributes(t.legs[0].shape, signal, costing)));
-    traced.forEach((r, j) => {
-      if (r.status !== 'fulfilled') return;
-      const a = analyzeRoute(batch[j], r.value);
-      a.edges = r.value.edges;
-      routes.push(a);
-    });
-  }
+  const traced = await Promise.allSettled(trips.map((t) => traceAttributes(t.legs[0].shape, signal, costing)));
+  traced.forEach((r, j) => {
+    if (r.status !== 'fulfilled') return;
+    const a = analyzeRoute(trips[j], r.value);
+    a.edges = r.value.edges;
+    routes.push(a);
+  });
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
   if (!routes.length) throw new RouteError('Gak bisa baca detail jalannya. Coba lagi bentar.');
   const kept = dedupe(routes).slice(0, 4);

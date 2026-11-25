@@ -2,11 +2,11 @@
 // tricky junctions up close, then open the chosen route in Google Maps.
 // All route maths lives in lib/route-analysis.js; network calls in lib/api.js.
 import { findRoutes, searchPlaces, searchPlacesDeep, reverse } from './lib/api.js';
-import { parseShared, parseCoordinates, hasShortMapsLink, formatDistance } from './lib/search.js';
+import { parseShared, parseCoordinates, hasShortMapsLink, placeFromMapsUrl, formatDistance } from './lib/search.js';
 import { prosCons, googleMapsUrl, formatKm, MODES } from './lib/route-analysis.js';
 import { createMap, useFallbackMap, useGoogleMap } from './lib/map.js';
 import { googleSuggest, googleResolve } from './lib/google-places.js';
-import { GOOGLE } from './config.js';
+import { GOOGLE, RESOLVER } from './config.js';
 const $ = (id) => document.getElementById(id);
 const els = {
   search: $('search'), from: $('from'), to: $('to'), locate: $('locate'), swap: $('swap'),
@@ -242,18 +242,58 @@ function showSuggestions(items, note) {
   els.suggestions.hidden = !items.length && !note;
 }
 
-// A nameless pin (a house in a perumahan) often arrives as a maps.app.goo.gl short link. A
-// browser can't open it to read the coordinates, so ask for the coordinates themselves.
-const COPY_HOW = 'Di Google Maps, buka pinnya lalu salin angka koordinatnya (bentuknya kayak -6.30…, 106.65…), terus ketuk "Tempel koordinat".';
+// Google Maps shares a place as a maps.app.goo.gl short link (a pin in a perumahan: only the
+// link). A browser can't open it to read the coordinates (no CORS on Google's redirect), so Jalur
+// asks its own resolver (resolver/worker.js; RESOLVER in config.js). Without one, or when it
+// fails, Jalur asks for the coordinates instead.
+const HAS_RESOLVER = !!RESOLVER;
+const COPY_HOW = 'Di Google Maps, buka pinnya lalu salin angka koordinatnya (bentuknya kayak -6.30…, 106.65…), terus ketuk "Tempel".';
 const SHORT_LINK_HELP = `Link pendek Google Maps gak bawa koordinat, jadi Jalur gak bisa tahu titiknya. ${COPY_HOW}`;
-const pasteRow = () => ({ icon: ICON.paste, accent: true, main: 'Tempel koordinat', sub: 'Yang kamu salin dari Google Maps', action: 'paste' });
+const pasteRow = () => (HAS_RESOLVER
+  ? { icon: ICON.paste, accent: true, main: 'Tempel link Google Maps', sub: 'Atau koordinat, yang kamu salin dari Maps/WA', action: 'paste' }
+  : { icon: ICON.paste, accent: true, main: 'Tempel koordinat', sub: 'Yang kamu salin dari Google Maps', action: 'paste' });
+
+/** Where a short link leads: { point, place } (place = name from the URL, may be null). */
+async function openShortLink(link, signal) {
+  const res = await fetch(`${RESOLVER}?u=${encodeURIComponent(link)}`, { signal });
+  if (!res.ok) throw new Error(`resolver ${res.status}`);
+  const { url } = await res.json();
+  const point = parseCoordinates(url);
+  if (!point) throw new Error('no coordinates in the link');
+  return { point, place: placeFromMapsUrl(url) };
+}
+
+let linkAbort = null;
+async function useShortLink(field, shared, raw) {
+  linkAbort?.abort();
+  const ctrl = new AbortController();
+  linkAbort = ctrl;
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  els[field].value = '';
+  showSuggestions([], 'Buka link Google Maps…');
+  try {
+    const { point, place } = await openShortLink(shared.link, ctrl.signal);
+    if (linkAbort !== ctrl || state.activeField !== field) return; // the rider moved on
+    closeSuggestions();
+    document.activeElement?.blur();
+    if (place) setPlace(field, { point, main: place.main, sub: place.sub });
+    else placeAt(field, point);
+  } catch (err) {
+    if (linkAbort !== ctrl || state.activeField !== field) return;
+    console.warn('Short link failed:', err);
+    // Fall back to what we had: the name in the share, or ask for coordinates.
+    useShared(field, { ...shared, link: '' }, raw, 'Link Google Maps-nya gak bisa dibuka sekarang. ');
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const pickRow = () => ({ icon: ICON.map, accent: true, main: 'Pilih di peta', sub: 'Ketuk titiknya di peta', action: 'pick' });
 
 let approxShare = null; // { field, q } of a "near <street>" share: say it's rough, see runSearch
 
 // Text from a share, the clipboard or pasted into a field, after parseShared: coordinates set
 // the place, a name is searched, a bare short link asks for coordinates. False if nothing usable.
-function useShared(field, shared, raw = '') {
+function useShared(field, shared, raw = '', prefix = '') {
   if (!shared) return false;
   if (shared.point) {
     closeSuggestions();
@@ -262,9 +302,13 @@ function useShared(field, shared, raw = '') {
     return true;
   }
   state.activeField = field;
+  if (shared.link && HAS_RESOLVER) {
+    useShortLink(field, shared, raw);
+    return true;
+  }
   if (shared.needsCoords) {
     // Show what came in, so a share format we don't know yet can be reported and handled.
-    showSuggestions([pasteRow(), pickRow()], raw ? `${SHORT_LINK_HELP}\n\nYang dikirim: ${raw}` : SHORT_LINK_HELP);
+    showSuggestions([pasteRow(), pickRow()], prefix + (raw ? `${SHORT_LINK_HELP}\n\nYang dikirim: ${raw}` : SHORT_LINK_HELP));
     return true;
   }
   const q = shared.query.slice(0, 120);
@@ -517,15 +561,24 @@ function maybeRoute() {
   computeRoutes();
 }
 
+// Routes already found this visit, so switching Motor <-> Mobil (or swapping back) is instant.
+// Free-flow routes don't change within a visit; the page reload clears it.
+const routeCache = new Map();
+const routeKey = () => `${state.mode}|${state.from.point.join(',')}|${state.to.point.join(',')}`;
+
 async function computeRoutes() {
   const ctrl = new AbortController();
   state.routeAbort = ctrl;
-  state.loading = true;
   state.routeError = null;
-  render();
+  const key = routeKey();
+  const cached = routeCache.get(key);
+  state.loading = !cached;
+  if (!cached) render();
   try {
-    const routes = await findRoutes(state.from.point, state.to.point, { signal: ctrl.signal, mode: state.mode });
+    const routes = cached || await findRoutes(state.from.point, state.to.point, { signal: ctrl.signal, mode: state.mode });
     if (ctrl.signal.aborted) return;
+    routeCache.set(key, routes);
+    if (routeCache.size > 12) routeCache.delete(routeCache.keys().next().value);
     state.routes = routes;
     state.selected = 0;
     state.loading = false;

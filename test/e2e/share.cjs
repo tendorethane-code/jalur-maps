@@ -19,15 +19,33 @@ const tapSel = async (p, cdp, sel) => {
   await finger(p, cdp, c.x, c.y);
 };
 const suggestText = (p) => p.$eval('#suggestions', (s) => (s.hidden ? '' : s.innerText));
-const pasteIndex = (p) => p.$$eval('#suggestions button[data-i]', (bs) => bs.findIndex((b) => /Tempel koordinat/.test(b.innerText)));
+const pasteIndex = (p) => p.$$eval('#suggestions button[data-i]', (bs) => bs.findIndex((b) => /Tempel (koordinat|link)/.test(b.innerText)));
+// A stand-in for resolver/worker.js: config.js gets a RESOLVER, and that URL answers like the Worker.
+const RESOLVED = 'https://www.google.com/maps/place/Jl.+Contoh+Raya+5,+RT.1%2FRW.2,+Pakulonan,+Serpong+Utara/data=!4m6!3m5!1s0x1:0x2!8m2!3d-6.2405!4d106.6537?entry=gps';
+async function fakeResolver(ctx, { fail = false } = {}) {
+  ctx.resolverCalls = 0;
+  await ctx.route(/\/config\.js$/, async (r) => {
+    const res = await r.fetch();
+    const body = (await res.text()).replace("export const RESOLVER = '';", "export const RESOLVER = 'https://resolver.test/';");
+    r.fulfill({ response: res, body });
+  });
+  await ctx.route(/^https:\/\/resolver\.test\//, (r) => {
+    ctx.resolverCalls++;
+    if (fail) return r.fulfill({ status: 502, contentType: 'application/json', body: '{"error":"x"}', headers: { 'access-control-allow-origin': '*' } });
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: RESOLVED }), headers: { 'access-control-allow-origin': '*' } });
+  });
+}
 
-async function page(b, { google = false, query = '', width } = {}) {
+async function page(b, { google = false, query = '', width, resolver } = {}) {
   const ctx = await b.newContext({
     ...devices['Pixel 7'], ...(width ? { viewport: { width, height: 800 } } : {}),
     geolocation: { latitude: -6.2445, longitude: 106.6283 },
     permissions: ['geolocation', 'clipboard-read', 'clipboard-write'], colorScheme: 'dark',
   });
   if (!google) await ctx.route(/googleapis\.com\/(maps|v1)|maps\.googleapis|places\.googleapis/, (r) => r.abort());
+  if (resolver) await fakeResolver(ctx, resolver);
+  ctx.valhalla = 0;
+  ctx.on('request', (r) => { if (/valhalla1\.openstreetmap\.de/.test(r.url())) ctx.valhalla++; });
   const p = await ctx.newPage();
   p.errors = [];
   p.on('pageerror', (e) => p.errors.push(e.message));
@@ -103,6 +121,45 @@ async function page(b, { google = false, query = '', width } = {}) {
   check('Near share searches the street', (await p.$eval('#to', (e) => e.value)) === 'Jl. Margonda Raya, Depok');
   check('Near share says it is rough after results', /kira-kira/.test(txt) && (await pasteIndex(p)) === 0, txt.slice(0, 100));
   await p.screenshot({ path: OUT + '2-near.png' });
+  await ctx.close();
+
+  // 8. With the resolver: a shared short link becomes the destination, named from the link.
+  ({ p, cdp, ctx } = await page(b, { resolver: {}, query: '?text=' + encodeURIComponent('https://maps.app.goo.gl/t8dC9KDdSXRDnCzSA?g_st=aw') }));
+  await p.waitForFunction(() => document.getElementById('to').value, null, { timeout: 15000 }).catch(() => {});
+  check('Resolver: shared link sets destination with its name', (await p.$eval('#to', (e) => e.value)) === 'Jl. Contoh Raya 5', await p.$eval('#to', (e) => e.value));
+  await p.waitForSelector('.rcard', { timeout: 40000 }).catch(() => {});
+  check('Resolver: routes appear', (await p.$$('.rcard')).length >= 2);
+
+  // 9. Mode switch: first time computes, switching back is instant from memory.
+  const before = ctx.valhalla;
+  await tapSel(p, cdp, '#modes [data-mode="mobil"]');
+  await p.waitForSelector('.rcard', { timeout: 40000 });
+  await p.waitForTimeout(500);
+  const afterMobil = ctx.valhalla;
+  await tapSel(p, cdp, '#modes [data-mode="motor"]');
+  const t = Date.now();
+  await p.waitForSelector('.rcard', { timeout: 40000 });
+  const backMs = Date.now() - t;
+  await p.waitForTimeout(500);
+  check('Mobil computes once', afterMobil > before, `${afterMobil - before} requests`);
+  check('Back to Motor is instant, no new requests', ctx.valhalla === afterMobil && backMs < 600, `${ctx.valhalla - afterMobil} requests, ${backMs} ms`);
+
+  // 10. Paste a link into the field: resolved too. Paste row says "link".
+  await tapSel(p, cdp, '#to');
+  await p.waitForTimeout(200);
+  check('Resolver: paste row offers links', await p.$$eval('#suggestions button[data-i]', (bs) => bs.some((x) => /Tempel link Google Maps/.test(x.innerText))));
+  const calls = ctx.resolverCalls;
+  await p.fill('#to', 'https://maps.app.goo.gl/AnotherOne1');
+  await p.waitForFunction(() => document.getElementById('suggestions').hidden, null, { timeout: 15000 }).catch(() => {});
+  check('Resolver: link typed in the field is opened', ctx.resolverCalls === calls + 1 && (await p.$eval('#to', (e) => e.value)) === 'Jl. Contoh Raya 5');
+  check('No page errors (resolver)', !p.errors.length, p.errors.join(' | '));
+  await ctx.close();
+
+  // 11. Resolver down: say so and fall back to asking for coordinates.
+  ({ p, cdp, ctx } = await page(b, { resolver: { fail: true }, query: '?text=' + encodeURIComponent('https://maps.app.goo.gl/AbCd123') }));
+  await p.waitForFunction(() => /gak bisa dibuka/.test(document.getElementById('suggestions').innerText), null, { timeout: 15000 }).catch(() => {});
+  txt = await suggestText(p);
+  check('Resolver down: explains and offers paste', /gak bisa dibuka/.test(txt) && /Yang dikirim/.test(txt) && (await pasteIndex(p)) >= 0, txt.slice(0, 90));
   await ctx.close();
 
   // 7. Google: traffic toggle, routes become see-through bands, choice remembered.

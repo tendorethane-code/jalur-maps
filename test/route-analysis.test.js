@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   groupOf, decodePolyline, analyzeRoute, mainStreets, stretches, dedupe, tagRoutes,
   prosCons, pickWaypoints, googleMapsUrl, shortName, formatKm, junctions, labelPoint, analyzeRoute as analyze, markAccess,
+  shapeOverlap, distinctTrips,
 } from '../public/lib/route-analysis.js';
 
 // Real Valhalla responses: motorcycle, Tebet -> Kemang (recorded 2026-11-18).
@@ -236,4 +237,18 @@ test('analyzeRoute on the real route splits access and mid-route small roads', (
   assert.ok(Math.abs(a.midSmallKm + a.accessSmallKm - totalSmall) < 1e-9);
   // The route starts in a living street in Tebet and ends in Kemang lanes: that is access.
   assert.ok(a.accessSmallKm > 0);
+});
+
+test('distinctTrips drops a repeated candidate before tracing, keeps real alternatives', () => {
+  const [main, alt1, alt2] = [route.trip, ...route.alternates.map((a) => a.trip)];
+  const kept = distinctTrips([main, alt1, { ...main }, alt2]);
+  assert.deepEqual(kept, [main, alt1, alt2]); // the copy of main is gone, order kept
+  assert.equal(distinctTrips([main, alt1, alt2], { max: 2 }).length, 2);
+  const a = decodePolyline(main.legs[0].shape);
+  const b = decodePolyline(alt1.legs[0].shape);
+  assert.equal(shapeOverlap(a, a), 1);
+  assert.ok(shapeOverlap(a, b) < 0.97, `alternative overlaps ${shapeOverlap(a, b)}`);
+  // A line ~40 m to the side (a parallel gang) is not "the same road".
+  const shifted = a.map(([lat, lon]) => [lat + 0.00036, lon]);
+  assert.ok(shapeOverlap(a, shifted) < 0.5);
 });

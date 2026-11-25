@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  normalizeQuery, stripAddressDetails, parseCoordinates, parseShared, hasShortMapsLink, rankPlaces, formatDistance,
+  normalizeQuery, stripAddressDetails, parseCoordinates, parseShared, hasShortMapsLink, shortMapsLink, placeFromMapsUrl, rankPlaces, formatDistance,
 } from '../public/lib/search.js';
 
 test('normalizeQuery expands what people type', () => {
@@ -41,29 +41,31 @@ test('parseCoordinates reads typed coordinates and Google Maps links', () => {
 test('parseShared turns a Google Maps share into a search', () => {
   assert.deepEqual(
     parseShared({ text: 'Living World Alam Sutera\nJl. Alam Sutera Boulevard No.Kav. 21, Pakulonan\nhttps://maps.app.goo.gl/AbCd' }),
-    { query: 'Living World Alam Sutera', address: 'Jl. Alam Sutera Boulevard No.Kav. 21, Pakulonan' },
+    { query: 'Living World Alam Sutera', address: 'Jl. Alam Sutera Boulevard No.Kav. 21, Pakulonan', link: 'https://maps.app.goo.gl/AbCd' },
   );
-  assert.deepEqual(parseShared({ title: 'Stasiun Tebet', url: 'https://maps.app.goo.gl/x' }), { query: 'Stasiun Tebet', address: '' });
+  assert.deepEqual(parseShared({ title: 'Stasiun Tebet', url: 'https://maps.app.goo.gl/x' }), { query: 'Stasiun Tebet', address: '', link: 'https://maps.app.goo.gl/x' });
   assert.deepEqual(parseShared({ text: 'Dropped pin\nhttps://maps.google.com/?q=-6.25,106.80' }), { point: [-6.25, 106.8], name: '' });
   assert.equal(parseShared({}), null);
 });
 
 test('parseShared: a nameless pin as a short link asks for coordinates', () => {
   // A house in a perumahan: no name, and the short link can't be opened from a browser.
-  assert.deepEqual(parseShared({ url: 'https://maps.app.goo.gl/x' }), { needsCoords: true, raw: 'https://maps.app.goo.gl/x' });
+  assert.deepEqual(parseShared({ url: 'https://maps.app.goo.gl/x' }), { needsCoords: true, raw: 'https://maps.app.goo.gl/x', link: 'https://maps.app.goo.gl/x' });
+  // What the owner's phone really sent (a pin in a perumahan), query string and all.
+  assert.equal(parseShared({ text: 'https://maps.app.goo.gl/t8dC9KDdSXRDnCzSA?g_st=aw' }).link, 'https://maps.app.goo.gl/t8dC9KDdSXRDnCzSA?g_st=aw');
   assert.equal(parseShared({ text: 'Dropped pin\nhttps://maps.app.goo.gl/x' }).needsCoords, true);
   assert.equal(parseShared({ text: 'Pin yang dilepas\nhttps://maps.app.goo.gl/x' }).needsCoords, true);
   // "Near ..." is a rough hint: search it, but flag it.
   assert.deepEqual(parseShared({ text: 'Dropped pin\nNear Jl. Mawar, Ciputat\nhttps://maps.app.goo.gl/x' }),
-    { query: 'Jl. Mawar, Ciputat', address: '', approx: true });
+    { query: 'Jl. Mawar, Ciputat', address: '', approx: true, link: 'https://maps.app.goo.gl/x' });
   // Coordinates on their own line win over everything.
   assert.deepEqual(parseShared({ text: 'Dropped pin\n-6.301234, 106.6521\nhttps://maps.app.goo.gl/x' }).point, [-6.301234, 106.6521]);
 });
 
 test('parseShared: pasted share text glued onto one line, and real names starting with "Sekitar"', () => {
-  assert.deepEqual(parseShared({ text: 'Stasiun Tebethttps://maps.app.goo.gl/x' }), { query: 'Stasiun Tebet', address: '' });
+  assert.deepEqual(parseShared({ text: 'Stasiun Tebethttps://maps.app.goo.gl/x' }), { query: 'Stasiun Tebet', address: '', link: 'https://maps.app.goo.gl/x' });
   assert.deepEqual(parseShared({ text: 'Sekitar Kita Coffee\nJl. Kemang Raya 5\nhttps://maps.app.goo.gl/x' }),
-    { query: 'Sekitar Kita Coffee', address: 'Jl. Kemang Raya 5' });
+    { query: 'Sekitar Kita Coffee', address: 'Jl. Kemang Raya 5', link: 'https://maps.app.goo.gl/x' });
   assert.equal(parseShared({ text: 'Near Jl. Mawar\nhttps://maps.app.goo.gl/x' }).approx, true);
 });
 
@@ -94,4 +96,14 @@ test('formatDistance', () => {
   assert.equal(formatDistance(2.44), '2,4 km');
   assert.equal(formatDistance(23.6), '24 km');
   assert.equal(formatDistance(null), '');
+});
+
+test('placeFromMapsUrl reads the place name from a resolved Google Maps link', () => {
+  assert.deepEqual(
+    placeFromMapsUrl('https://www.google.com/maps/place/Jl.+Contoh+Utama+1+10-2,+RT.10%2FRW.10,+Duri+Kosambi,+Kecamatan+Cengkareng,+Kota+Jakarta+Barat,+11750/data=!4m6!3d-6.17!4d106.71'),
+    { main: 'Jl. Contoh Utama 1 10-2', sub: 'Duri Kosambi, Kecamatan Cengkareng' },
+  );
+  assert.equal(placeFromMapsUrl('https://www.google.com/maps/place/-6.17,106.71/data=!3d-6.17!4d106.71'), null);
+  assert.equal(placeFromMapsUrl('https://www.google.com/maps?q=-6.17,106.71'), null);
+  assert.equal(shortMapsLink('cek http://maps.app.goo.gl/abc ya'), 'https://maps.app.goo.gl/abc');
 });

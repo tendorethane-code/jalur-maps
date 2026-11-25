@@ -7,3 +7,8 @@ export const GOOGLE = {
   apiKey: 'AIzaSyAp_cgcehoGgXoF62QqstBcdjsy28jI59E',
   mapId: '8fe3e72cf3d2a732c29a936c',
 };
+
+// Jalur's own link resolver (resolver/worker.js on Cloudflare Workers): opens Google Maps short
+// links (maps.app.goo.gl/…) that a web page can't open itself. Empty = off: Jalur then asks the
+// rider to paste coordinates instead.
+export const RESOLVER = '';

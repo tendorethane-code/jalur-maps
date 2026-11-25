@@ -68,6 +68,26 @@ export function hasShortMapsLink(text) {
   return /\b(maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(String(text || ''));
 }
 
+/** The first Google Maps short link in a text, or ''. */
+export function shortMapsLink(text) {
+  const m = String(text || '').match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/[\w-]+(?:\?[^\s]*)?/i);
+  return m ? m[0].replace(/^http:/i, 'https:') : '';
+}
+
+/**
+ * The place name in a full Google Maps URL (".../maps/place/Jl.+Flamboyan+1,+Duri+Kosambi,+.../data=..."),
+ * split like a search result: { main: 'Jl. Flamboyan 1', sub: 'Duri Kosambi, …' }, or null.
+ */
+export function placeFromMapsUrl(url) {
+  const m = String(url || '').match(/\/maps\/place\/([^/?#]+)/);
+  if (!m) return null;
+  let name;
+  try { name = decodeURIComponent(m[1].replace(/\+/g, ' ')).trim(); } catch { return null; }
+  if (!name || /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(name)) return null; // just coordinates
+  const parts = name.split(/,\s*/).filter((x) => x && !/^RT\.?\s*\d|^RW\.?\s*\d|^\d{5}$/i.test(x));
+  return { main: parts[0], sub: parts.slice(1, 3).join(', ') };
+}
+
 // Labels Google Maps puts on a pin that has no name (English and Indonesian, as far as known).
 const PIN_LABEL = /^(dropped pin|pin (lokasi|yang dilepas|dilepas|yang dijatuhkan|terpasang)|titik yang diletakkan|lokasi yang ditandai)$/i;
 
@@ -87,12 +107,15 @@ export function parseShared({ title = '', text = '', url = '' } = {}) {
   const lines = raw.filter((l) => !PIN_LABEL.test(l));
   const name = lines[0] || '';
   if (point) return { point, name };
+  // A short link, when there is one, points at the exact spot: better than searching the name.
+  const link = shortMapsLink(all);
+  const withLink = (o) => (link ? { ...o, link } : o);
   // "Near …" only means a nameless pin when Google also said it was a pin, or gave no address
   // line: a real place can be called "Sekitar Kita Coffee".
   const near = name.match(/^(near|dekat|di dekat|sekitar)\s+(.+)/i);
-  if (near && (lines.length < raw.length || lines.length === 1)) return { query: near[2], address: lines[1] || '', approx: true };
-  if (name) return { query: name, address: lines[1] || '' };
-  if (hasShortMapsLink(all)) return { needsCoords: true, raw: all.trim() };
+  if (near && (lines.length < raw.length || lines.length === 1)) return withLink({ query: near[2], address: lines[1] || '', approx: true });
+  if (name) return withLink({ query: name, address: lines[1] || '' });
+  if (link) return { needsCoords: true, raw: all.trim(), link };
   return null;
 }
 

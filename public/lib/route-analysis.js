@@ -249,6 +249,45 @@ export function overlap(a, b) {
   return total ? shared / total : 0;
 }
 
+/**
+ * Share of shape a's length (in [lat, lon] points) that runs within roughly 15 m of shape b
+ * (0–1). Cheap, so duplicate candidates can be dropped before asking the server for their
+ * road details. Each segment counts by its length, so long straight roads aren't undercounted.
+ */
+export function shapeOverlap(a, b, cell = 0.0001) {
+  const near = new Set();
+  for (const [lat, lon] of b) {
+    const i = Math.round(lat / cell), j = Math.round(lon / cell);
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) near.add(`${i + di},${j + dj}`);
+  }
+  let shared = 0, total = 0;
+  for (let k = 0; k < a.length - 1; k++) {
+    const len = Math.hypot(a[k + 1][0] - a[k][0], (a[k + 1][1] - a[k][1]) * 0.994);
+    total += len;
+    const [lat, lon] = a[k];
+    if (near.has(`${Math.round(lat / cell)},${Math.round(lon / cell)}`)) shared += len;
+  }
+  return total ? shared / total : 0;
+}
+
+/**
+ * Candidate trips worth analysing: in the given order (best of each kind first), skipping any
+ * that is practically the same line as an earlier one, at most `max`. Deliberately strict
+ * (15 m, 97 %): a gang running right next to the main road must not count as "the same road".
+ * dedupe() on OSM ways does the real merging afterwards. A 35 m / 90 % version dropped the
+ * motor "terpendek" route Tebet -> Kemang that dedupe() keeps.
+ */
+export function distinctTrips(trips, { max = 5, threshold = 0.97 } = {}) {
+  const kept = [];
+  for (const trip of trips) {
+    const shape = decodePolyline(trip.legs[0].shape);
+    if (kept.some((k) => shapeOverlap(shape, k.shape) >= threshold && shapeOverlap(k.shape, shape) >= threshold)) continue;
+    kept.push({ trip, shape });
+    if (kept.length >= max) break;
+  }
+  return kept.map((k) => k.trip);
+}
+
 /** Drop routes that are basically the same road as one kept earlier. */
 export function dedupe(routes, threshold = 0.85) {
   const kept = [];

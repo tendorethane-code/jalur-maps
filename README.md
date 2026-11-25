@@ -29,10 +29,11 @@ dirapihin dulu, dan hasil yang paling deket sama lu ditaruh paling atas (ada jar
 Kalau gak ketemu, ada tombol **Cari lebih teliti** (lebih bagus buat alamat lengkap). Bisa juga
 paste koordinat atau link Google Maps yang ada koordinatnya. Paling ampuh: di Google Maps
 tekan **Bagikan → Jalur** (Android, app udah dipasang), tujuannya langsung keisi.
-Pin tanpa nama (rumah di perumahan) kadang cuma dikirim Google Maps sebagai link pendek
-`maps.app.goo.gl/…`. Link kayak gitu gak bawa koordinat, dan browser gak bisa ngebukanya. Jalur
-bakal bilang begitu dan nampilin teks yang dikirim. Jalan keluarnya: salin angka koordinat
-pinnya di Google Maps, terus ketuk **Tempel koordinat** di kolom tujuan.
+Link pendek Google Maps (`maps.app.goo.gl/…`, yang didapet pas share pin atau rumah) bisa
+langsung ditempel di kolom tujuan, atau ketuk **Tempel link Google Maps**. Browser gak bisa
+ngebuka link kayak gitu sendiri, jadi Jalur minta tolong server mini miliknya
+(`resolver/worker.js`, Cloudflare Worker gratis) buat ngambil koordinatnya. Kalau server itu
+lagi gak bisa, Jalur bilang begitu dan minta angka koordinatnya aja.
 
 Tampilan: kartu rute bisa di-swipe, tiap rute ada gelembung waktu di peta, warna jalan
 (biru gede, hijau sedang, oranye kecil) konsisten di peta, bar, dan daftar jalan.
