@@ -22,13 +22,16 @@ const suggestText = (p) => p.$eval('#suggestions', (s) => (s.hidden ? '' : s.inn
 const pasteIndex = (p) => p.$$eval('#suggestions button[data-i]', (bs) => bs.findIndex((b) => /Tempel (koordinat|link)/.test(b.innerText)));
 // A stand-in for resolver/worker.js: config.js gets a RESOLVER, and that URL answers like the Worker.
 const RESOLVED = 'https://www.google.com/maps/place/Jl.+Contoh+Raya+5,+RT.1%2FRW.2,+Pakulonan,+Serpong+Utara/data=!4m6!3m5!1s0x1:0x2!8m2!3d-6.2405!4d106.6537?entry=gps';
-async function fakeResolver(ctx, { fail = false } = {}) {
-  ctx.resolverCalls = 0;
+async function setResolver(ctx, url) {
   await ctx.route(/\/config\.js$/, async (r) => {
     const res = await r.fetch();
-    const body = (await res.text()).replace("export const RESOLVER = '';", "export const RESOLVER = 'https://resolver.test/';");
+    const body = (await res.text()).replace(/export const RESOLVER = '[^']*';/, `export const RESOLVER = '${url}';`);
     r.fulfill({ response: res, body });
   });
+}
+async function fakeResolver(ctx, { fail = false } = {}) {
+  ctx.resolverCalls = 0;
+  await setResolver(ctx, 'https://resolver.test/');
   await ctx.route(/^https:\/\/resolver\.test\//, (r) => {
     ctx.resolverCalls++;
     if (fail) return r.fulfill({ status: 502, contentType: 'application/json', body: '{"error":"x"}', headers: { 'access-control-allow-origin': '*' } });
@@ -43,7 +46,9 @@ async function page(b, { google = false, query = '', width, resolver } = {}) {
     permissions: ['geolocation', 'clipboard-read', 'clipboard-write'], colorScheme: 'dark',
   });
   if (!google) await ctx.route(/googleapis\.com\/(maps|v1)|maps\.googleapis|places\.googleapis/, (r) => r.abort());
-  if (resolver) await fakeResolver(ctx, resolver);
+  if (resolver === 'real') ctx.resolverCalls = 0;
+  else if (resolver) await fakeResolver(ctx, resolver);
+  else await setResolver(ctx, ''); // the flow without a resolver
   ctx.valhalla = 0;
   ctx.on('request', (r) => { if (/valhalla1\.openstreetmap\.de/.test(r.url())) ctx.valhalla++; });
   const p = await ctx.newPage();
@@ -160,6 +165,14 @@ async function page(b, { google = false, query = '', width, resolver } = {}) {
   await p.waitForFunction(() => /gak bisa dibuka/.test(document.getElementById('suggestions').innerText), null, { timeout: 15000 }).catch(() => {});
   txt = await suggestText(p);
   check('Resolver down: explains and offers paste', /gak bisa dibuka/.test(txt) && /Yang dikirim/.test(txt) && (await pasteIndex(p)) >= 0, txt.slice(0, 90));
+  await ctx.close();
+
+  // 12. The real Worker (config.js as committed) with the owner's real shared link.
+  ({ p, cdp, ctx } = await page(b, { resolver: 'real', query: '?text=' + encodeURIComponent('https://maps.app.goo.gl/t8dC9KDdSXRDnCzSA?g_st=aw') }));
+  await p.waitForFunction(() => document.getElementById('to').value && !/^Titik di peta$/.test(document.getElementById('to').value), null, { timeout: 20000 }).catch(() => {});
+  const dest = await p.evaluate(() => JSON.parse(sessionStorage.getItem('jalur.trip') || '{}').to || null);
+  check('Real resolver: owner\'s link becomes the destination', !!(await p.$eval('#to', (e) => e.value)) && /-6\.17/.test(JSON.stringify(dest || '')) , JSON.stringify(dest?.point || null));
+  check('No page errors (real resolver)', !p.errors.length, p.errors.join(' | '));
   await ctx.close();
 
   // 7. Google: traffic toggle, routes become see-through bands, choice remembered.
