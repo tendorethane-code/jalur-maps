@@ -44,11 +44,12 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
 - [luar], owner only: taps and long-press on the Android phone; the Maps link opening Google Maps.
 - Web releases: DB backup/migration, installers, checksums, signing are not relevant. APK releases
   (tag `apk-v*`): signing key, SHA-256, versionCode bump and an owner phone test ARE relevant.
-- Deploy: configure-pages@v6, upload-pages-artifact@v5, deploy-pages@v5 (PR #2, run #15 green).
-  On 2026-11-25 the old set (deploy-pages@v4 + upload-pages-artifact@v3) failed every run with
-  "No artifacts named github-pages". Re-running a failed run doesn't help: the old artifact is
-  still there, so deploy finds 2 and refuses. Start a new run (workflow_dispatch) instead.
-  checkout/setup-node are still @v4 (Node 20, forced onto Node 24 with a warning; works).
+- Deploy flakiness: "No artifacts named github-pages" / "Found 0 artifact(s)" is intermittent, not a
+  version problem: runs 11-13 failed on deploy-pages@v4, run 16 on v5, 15 and 17 passed (PR #2's
+  version bump was not the fix). deploy-pages asked ~0.3 s after the upload. pages.yml now has
+  separate build and deploy jobs (GitHub's template) plus one retry after 30 s. Re-running a failed
+  run doesn't help (the old artifact is still there, deploy finds 2); start a new run instead.
+  Always check the run result and `sw.js` CACHE on the live site after a push to main.
 
 ## APK (`android/`)
 - Trusted Web Activity around the live site: `JalurLauncherActivity` extends android-browser-helper's

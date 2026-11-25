@@ -1,5 +1,10 @@
 # Publishes public/ to GitHub Pages whenever Jalur changes on main.
 # One-time setup in the repo: Settings -> Pages -> Source: "GitHub Actions".
+#
+# Build and deploy are separate jobs, as in GitHub's own Pages template. In one job, deploy-pages
+# asked for the artifact ~0.3 s after upload and sometimes got "Found 0 artifact(s)" (runs 11-13
+# on v4, run 16 on v5; 15 and 17 passed). If it still happens, the deploy step waits and tries once
+# more. Re-running a failed run doesn't help: the old artifact is still there and deploy finds 2.
 name: Deploy to GitHub Pages
 
 on:
@@ -19,11 +24,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,5 +37,20 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url || steps.retry.outputs.page_url }}
+    steps:
       - id: deployment
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - name: Wait before trying again
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+      - id: retry
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v5
