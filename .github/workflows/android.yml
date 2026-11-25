@@ -39,6 +39,14 @@ jobs:
           fi
           printf '%s' "$KEY_B64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/jalur.p12" \
             || { echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64: paste the whole keystore-base64.txt."; exit 1; }
+          # The keystore file itself is known: 2630 bytes with this SHA-256 (not a secret: it's a hash
+          # of an encrypted file). A mismatch means the base64 secret was cut short or mangled.
+          KS_SHA=$(sha256sum "$RUNNER_TEMP/jalur.p12" | cut -d' ' -f1)
+          if [ "$KS_SHA" != 3f04c0d061f83f653d24c27a805f1acef1a85cd1698d1bc1fbad993ce3ba41cb ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not the Jalur key ($(stat -c %s "$RUNNER_TEMP/jalur.p12") bytes, expected 2630). Paste the whole keystore-base64.txt (3508 characters)."
+            exit 1
+          fi
+          echo "Keystore file OK (2630 bytes, SHA-256 matches)."
           # Pasting on a phone easily adds a space or line break at the ends: drop those.
           PW=$(printf '%s' "$KEY_PASSWORD" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
           echo "::add-mask::$PW"
