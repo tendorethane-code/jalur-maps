@@ -29,10 +29,18 @@ dirapihin dulu, dan hasil yang paling deket sama lu ditaruh paling atas (ada jar
 Kalau gak ketemu, ada tombol **Cari lebih teliti** (lebih bagus buat alamat lengkap). Bisa juga
 paste koordinat atau link Google Maps yang ada koordinatnya. Paling ampuh: di Google Maps
 tekan **Bagikan → Jalur** (Android, app udah dipasang), tujuannya langsung keisi.
+Pin tanpa nama (rumah di perumahan) kadang cuma dikirim Google Maps sebagai link pendek
+`maps.app.goo.gl/…`. Link kayak gitu gak bawa koordinat, dan browser gak bisa ngebukanya. Jalur
+bakal bilang begitu dan nampilin teks yang dikirim. Jalan keluarnya: salin angka koordinat
+pinnya di Google Maps, terus ketuk **Tempel koordinat** di kolom tujuan.
 
 Tampilan: kartu rute bisa di-swipe, tiap rute ada gelembung waktu di peta, warna jalan
 (biru gede, hijau sedang, oranye kecil) konsisten di peta, bar, dan daftar jalan.
 Sheet bawah bisa ditarik (kecil / setengah / penuh). Mode gelap ikut setelan HP.
+
+Tombol **Macet** (di atas daftar rute, cuma di peta Google): nampilin warna kepadatan dari
+Google di jalan-jalannya. Selama nyala, garis rute jadi pita tembus pandang biar warnanya
+kelihatan. Itu kepadatan buat mobil (motor biasanya lebih cepet), dan gak ngubah menit di kartu.
 
 ## Cara jalanin
 
@@ -65,7 +73,8 @@ Rute yang ≥85% lewat jalan yang sama digabung. Sisanya dikasih label
 
 ## Keterbatasan (jujur aja)
 
-- **Estimasi waktu belum ngitung macet.** Waktu asli lihat di Google Maps setelah dibuka.
+- **Estimasi waktu belum ngitung macet.** Tombol Macet cuma nunjukin warna, bukan menit. Waktu asli lihat
+  di Google Maps setelah dibuka.
 - **Klasifikasi jalan dari OSM bisa salah.** Gang yang di-tag `residential` sama kayak jalan
   perumahan biasa. Perlu dicek di rute yang beneran sering dilewatin.
 - **Google Maps bisa tetap "pinter sendiri"** di antara titik singgah, dan titik singgah
