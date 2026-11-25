@@ -74,6 +74,11 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
   run_workflow with inputs); gh creates the tag at that commit. Only from main, tag format and
   version are checked. An installed APK can't be withdrawn: release only after /cek-rilis + GO.
   Bump versionCode and versionName for every release.
+- TODO at the first official release (`apk-v1.0.0`, owner agreed): publish the APK as `jalur.apk`
+  (fixed name, keep the versioned copy too if useful) so
+  `https://github.com/tendorethane-code/jalur-maps/releases/latest/download/jalur.apk` always
+  points at the newest release (pre-releases don't count as latest), and link it from the
+  landing page in `tendorethane-code.github.io`. Then mark this done.
 - Local build: Android SDK (platforms 36, build-tools 36) + `/opt/gradle-8.14.3/bin/gradle` in
   `android/`, `JALUR_KEYSTORE`/`JALUR_KEYSTORE_PASSWORD` env for a signed build.
 - Verification file: `.well-known/assetlinks.json` in `tendorethane-code/tendorethane-code.github.io`
