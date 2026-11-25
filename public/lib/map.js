@@ -105,6 +105,7 @@ async function googleMap(el, opts) {
   const ll = ([lat, lng]) => ({ lat, lng });
   const pt = (latLng) => [latLng.lat(), latLng.lng()];
   let tilesShown = false;
+  let traffic = null;
   google.maps.event.addListenerOnce(map, 'tilesloaded', () => { tilesShown = true; });
 
   return {
@@ -124,6 +125,10 @@ async function googleMap(el, opts) {
       map.setZoom(z);
       map.panTo(ll(point));
       if (dx || dy) google.maps.event.addListenerOnce(map, 'idle', () => map.panBy(dx, dy));
+    },
+    /** Google's live traffic colours on the roads (Google engine only; OSM has no traffic). */
+    setTraffic(on) {
+      if (on) { traffic ||= new google.maps.TrafficLayer(); traffic.setMap(map); } else traffic?.setMap(null);
     },
     onClick(fn) { map.addListener('click', (e) => e.latLng && fn(pt(e.latLng))); },
     onLongPress(fn) {

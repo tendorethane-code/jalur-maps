@@ -49,31 +49,48 @@ export function parseCoordinates(text) {
     /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, // place pages: most exact
     /[?&](?:q|query|destination|ll|center)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/,
     /@(-?\d+\.\d+),(-?\d+\.\d+)/,
-    /^\s*(-?\d{1,2}\.\d{3,})\s*[, ]\s*(-?\d{2,3}\.\d{3,})\s*$/,
+    /^\s*(-?\d{1,2}\.\d{3,})\s*[, ]\s*(-?\d{2,3}\.\d{3,})\s*$/m,
+    // Decimal commas, as an Indonesian phone may write them: "-6,301234, 106,652100".
+    /^\s*(-?\d{1,2},\d{3,})\s*[,; ]\s*(-?\d{2,3},\d{3,})\s*$/m,
   ];
   for (const re of patterns) {
     const m = s.match(re);
     if (m) {
-      const lat = Number(m[1]), lon = Number(m[2]);
+      const lat = Number(m[1].replace(',', '.')), lon = Number(m[2].replace(',', '.'));
       if (inJabodetabek(lat, lon)) return [lat, lon];
     }
   }
   return null;
 }
 
+/** A Google Maps short link (maps.app.goo.gl/…, goo.gl/maps/…): no coordinates inside. */
+export function hasShortMapsLink(text) {
+  return /\b(maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(String(text || ''));
+}
+
+// Labels Google Maps puts on a pin that has no name (English and Indonesian, as far as known).
+const PIN_LABEL = /^(dropped pin|pin (lokasi|yang dilepas|dilepas|yang dijatuhkan|terpasang)|titik yang diletakkan|lokasi yang ditandai)$/i;
+
 /**
  * What another app (usually Google Maps) shared to Jalur: { title, text, url }.
  * Google Maps sends something like "Living World Alam Sutera\nJl. Alam Sutera Boulevard...\nhttps://maps.app.goo.gl/...".
  * Returns { point } when coordinates are in there, else { query } to search for.
+ * A pin without a name (a house in a perumahan) often comes as only a short link, which a
+ * browser can't open to read the coordinates: that returns { needsCoords: true, raw }.
+ * "Near Jl. X" / "Dekat Jl. X" is only roughly there: { query: 'Jl. X', approx: true }.
  */
 export function parseShared({ title = '', text = '', url = '' } = {}) {
   const all = [title, text, url].filter(Boolean).join('\n');
   const point = parseCoordinates(all);
   const lines = all.split(/\n+/).map((l) => l.trim())
-    .filter((l) => l && !/^https?:\/\//i.test(l) && !/^(dropped pin|pin lokasi|titik yang diletakkan)$/i.test(l));
+    .filter((l) => l && !/^https?:\/\//i.test(l) && !PIN_LABEL.test(l));
   const name = lines[0] || '';
   if (point) return { point, name };
-  return name ? { query: name, address: lines[1] || '' } : null;
+  const near = name.match(/^(near|dekat|di dekat|sekitar)\s+(.+)/i);
+  if (near) return { query: near[2], address: lines[1] || '', approx: true };
+  if (name) return { query: name, address: lines[1] || '' };
+  if (hasShortMapsLink(all)) return { needsCoords: true, raw: all.trim() };
+  return null;
 }
 
 /** Rough distance in km between two [lat, lon] points (fine at city scale). */

@@ -2,7 +2,7 @@
 // tricky junctions up close, then open the chosen route in Google Maps.
 // All route maths lives in lib/route-analysis.js; network calls in lib/api.js.
 import { findRoutes, searchPlaces, searchPlacesDeep, reverse } from './lib/api.js';
-import { parseShared, parseCoordinates, formatDistance } from './lib/search.js';
+import { parseShared, parseCoordinates, hasShortMapsLink, formatDistance } from './lib/search.js';
 import { prosCons, googleMapsUrl, formatKm, MODES } from './lib/route-analysis.js';
 import { createMap, useFallbackMap, useGoogleMap } from './lib/map.js';
 import { googleSuggest, googleResolve } from './lib/google-places.js';
@@ -11,6 +11,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   search: $('search'), from: $('from'), to: $('to'), locate: $('locate'), swap: $('swap'),
   suggestions: $('suggestions'), sheet: $('sheet'), grab: $('sheet-grab'), body: $('sheet-body'), cta: $('sheet-cta'),
+  traffic: $('traffic'), trafficLegend: $('traffic-legend'),
   pickBanner: $('pick-banner'), pickText: $('pick-text'), pickCancel: $('pick-cancel'), preview: $('preview'),
 };
 
@@ -63,6 +64,7 @@ const ICON = {
   prev: svg(stroke('m15 6-6 6 6 6'), 16),
   next: svg(stroke('m9 6 6 6-6 6'), 16),
   go: svg('<path d="M3 11.5 21 3l-8.5 18-2-7.5z" fill="currentColor"/>', 18),
+  paste: svg(stroke('M9 4h6v3H9zM9 5.5H6.5v15h11v-15H15M9 12h6m-6 4h4')),
   toll: svg(stroke('M4 20V9l8-5 8 5v11M4 13h16M9 20v-4h6v4'), 13),
   noToll: svg(stroke('M4 20V9l8-5 8 5v11M4 4l16 16'), 13),
 };
@@ -90,6 +92,22 @@ map.onNoTiles?.(() => {
   document.body.append(bar);
 });
 
+// Traffic (Google map only): Google's live colours on the roads. Our route lines would cover
+// exactly the roads we want to read, so with traffic on the routes become a see-through band.
+let trafficOn = !!map.setTraffic && store.get('jalur.traffic', false);
+function setTraffic(on) {
+  trafficOn = on;
+  store.set('jalur.traffic', on);
+  map.setTraffic(on);
+  els.traffic.setAttribute('aria-pressed', String(on));
+  els.trafficLegend.hidden = !on;
+  drawRoutes(false);
+}
+if (map.setTraffic) {
+  els.traffic.hidden = false;
+  els.traffic.addEventListener('click', () => setTraffic(!trafficOn));
+}
+
 const dark = window.matchMedia('(prefers-color-scheme: dark)');
 dark.addEventListener('change', () => { drawMarkers(); drawRoutes(false); });
 
@@ -97,6 +115,7 @@ const routeLayer = map.layer();
 const labelLayer = map.layer();
 const markerLayer = map.layer();
 const previewLayer = map.layer();
+if (trafficOn) setTraffic(true); // remembered from last time
 
 function drawMarkers() {
   markerLayer.clear();
@@ -114,15 +133,23 @@ function drawRoutes(fit = true) {
   if (!state.routes.length) return;
   const colors = { gede: css('--gede'), sedang: css('--sedang'), kecil: css('--kecil') };
   const casing = css('--casing');
-  state.routes.forEach((r, i) => {
-    if (i === state.selected) return;
-    routeLayer.polyline(r.shape, { color: casing, weight: 9, opacity: 0.9, zIndex: 1 });
-    routeLayer.polyline(r.shape, { color: css('--other'), weight: 5, opacity: 0.95, zIndex: 2, onClick: () => select(i) });
-  });
   const sel = state.routes[state.selected];
-  routeLayer.polyline(sel.shape, { color: casing, weight: 11, zIndex: 3 });
-  for (const s of sel.stretches) {
-    routeLayer.polyline(sel.shape.slice(s.from, s.to + 1), { color: colors[s.group], weight: 6.5, zIndex: 4 });
+  if (trafficOn) {
+    // See-through bands: the traffic colour of the road underneath stays readable.
+    state.routes.forEach((r, i) => {
+      if (i !== state.selected) routeLayer.polyline(r.shape, { color: css('--other'), weight: 16, opacity: 0.45, zIndex: 1, onClick: () => select(i) });
+    });
+    routeLayer.polyline(sel.shape, { color: css('--accent'), weight: 22, opacity: 0.5, zIndex: 3 });
+  } else {
+    state.routes.forEach((r, i) => {
+      if (i === state.selected) return;
+      routeLayer.polyline(r.shape, { color: casing, weight: 9, opacity: 0.9, zIndex: 1 });
+      routeLayer.polyline(r.shape, { color: css('--other'), weight: 5, opacity: 0.95, zIndex: 2, onClick: () => select(i) });
+    });
+    routeLayer.polyline(sel.shape, { color: casing, weight: 11, zIndex: 3 });
+    for (const s of sel.stretches) {
+      routeLayer.polyline(sel.shape.slice(s.from, s.to + 1), { color: colors[s.group], weight: 6.5, zIndex: 4 });
+    }
   }
   // Junction dots on the selected route: tap one to preview it.
   sel.junctions.forEach((j, k) => {
@@ -216,10 +243,43 @@ function showSuggestions(items, note) {
   els.suggestions.hidden = !items.length && !note;
 }
 
+// A nameless pin (a house in a perumahan) often arrives as a maps.app.goo.gl short link. A
+// browser can't open it to read the coordinates, so ask for the coordinates themselves.
+const COPY_HOW = 'Di Google Maps, buka pinnya lalu salin angka koordinatnya (bentuknya kayak -6.30…, 106.65…), terus ketuk "Tempel koordinat".';
+const SHORT_LINK_HELP = `Link pendek Google Maps gak bawa koordinat, jadi Jalur gak bisa tahu titiknya. ${COPY_HOW}`;
+const pasteRow = () => ({ icon: ICON.paste, accent: true, main: 'Tempel koordinat', sub: 'Yang kamu salin dari Google Maps', action: 'paste' });
+const pickRow = () => ({ icon: ICON.map, accent: true, main: 'Pilih di peta', sub: 'Ketuk titiknya di peta', action: 'pick' });
+
+let approxShare = null; // the query of a "near <street>" share, see handleShare
+
+async function pasteLocation(field) {
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    showSuggestions([pickRow()], 'Jalur gak bisa baca yang kamu salin. Tahan lama kolomnya, lalu pilih Tempel.');
+    return;
+  }
+  if (state.activeField !== field) return;
+  const point = parseCoordinates(text);
+  if (point) {
+    closeSuggestions();
+    document.activeElement?.blur();
+    placeAt(field, point);
+    return;
+  }
+  if (hasShortMapsLink(text)) return showSuggestions([pasteRow(), pickRow()], SHORT_LINK_HELP);
+  const q = (text || '').trim().split(/\n/)[0].slice(0, 120);
+  if (!q) return showSuggestions([pasteRow(), pickRow()], `Belum ada yang disalin. ${COPY_HOW}`);
+  els[field].value = q;
+  onInput(field);
+}
+
 function baseSuggestions(field) {
   const items = [];
   if (field === 'from') items.push({ icon: ICON.gps, accent: true, main: 'Lokasi kamu', sub: 'Pakai GPS', action: 'gps' });
-  items.push({ icon: ICON.map, accent: true, main: 'Pilih di peta', sub: 'Ketuk titiknya di peta', action: 'pick' });
+  items.push(pickRow());
+  if (field === 'to') items.push(pasteRow());
   for (const p of store.get('jalur.recent', [])) items.push({ icon: ICON.recent, ...p });
   return items;
 }
@@ -228,7 +288,7 @@ function baseSuggestions(field) {
 function actionRows(q, { deep = true } = {}) {
   const rows = [];
   if (deep && !googleSearch && q.length >= 3) rows.push({ icon: ICON.search, accent: true, main: 'Cari lebih teliti', sub: 'Bagus buat alamat lengkap, agak lama', action: 'deep', query: q });
-  rows.push({ icon: ICON.map, accent: true, main: 'Pilih di peta', sub: 'Ketuk titiknya di peta', action: 'pick' });
+  rows.push(pickRow());
   return rows;
 }
 
@@ -252,6 +312,11 @@ const runSearch = debounce(async (field, q) => {
     }
     results ||= await searchPlaces(q, nearPoint(), signal);
     if (signal.aborted || state.activeField !== field || els[field].value.trim() !== q) return;
+    if (approxShare === q) {
+      // Shared as "near <street>": keep saying it's rough and keep the paste row on top.
+      showSuggestions([pasteRow(), ...results, ...actionRows(q)], `Pin tanpa nama, cuma "dekat ${q}": hasilnya kira-kira aja. Biar pas, tempel koordinatnya.`);
+      return;
+    }
     showSuggestions([...results, ...actionRows(q)], results.length ? '' : 'Gak ketemu di pencarian cepat. Coba "Cari lebih teliti", atau pilih di peta.');
   } catch (err) {
     if (err.name !== 'AbortError' && state.activeField === field) showSuggestions(actionRows(q), 'Pencarian lagi gak bisa. Coba lagi bentar.');
@@ -275,6 +340,7 @@ async function runDeepSearch(field, q) {
 function onInput(field) {
   const q = els[field].value.trim();
   if (q.length < 3) { searchAbort?.abort(); showSuggestions(baseSuggestions(field)); return; }
+  if (hasShortMapsLink(q) && !parseCoordinates(q)) { searchAbort?.abort(); showSuggestions([pasteRow(), pickRow()], SHORT_LINK_HELP); return; }
   // Keep showing the previous results while the new ones load, like Google Maps does.
   if (!suggestionItems.some((s) => !s.action)) showSuggestions(actionRows(q), 'Nyari…');
   else els.suggestions.classList.add('stale'); // old results stay visible but faded until new ones land
@@ -292,6 +358,7 @@ function chooseSuggestion(i) {
   const it = suggestionItems[i];
   if (!field || !it) return;
   if (it.action === 'deep') return runDeepSearch(field, it.query);
+  if (it.action === 'paste') return pasteLocation(field);
   closeSuggestions();
   document.activeElement?.blur();
   if (it.action === 'gps') return locate();
@@ -336,6 +403,8 @@ els.suggestions.addEventListener('pointerdown', (e) => {
   const b = e.target.closest('button[data-i]');
   if (!b) return;
   e.preventDefault();
+  // Reading the clipboard needs a real tap (a touch pointerdown doesn't count): do it on click.
+  if (suggestionItems[Number(b.dataset.i)]?.action === 'paste') { e.stopPropagation(); return; }
   // Stop here: choosing can replace the list, and the document handler below would then see
   // a detached target, think the tap was outside the search card, and close everything.
   e.stopPropagation();
@@ -346,6 +415,10 @@ els.suggestions.addEventListener('pointerdown', (e) => {
 // We act on pointerdown, so the list is gone before the finger lifts. The browser then sends
 // the tap's click to whatever moved under the finger. On the owner's phone that was the
 // "Pakai peta cadangan" button, which silently switched maps. Eat that one click.
+els.suggestions.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-i]');
+  if (b && suggestionItems[Number(b.dataset.i)]?.action === 'paste') chooseSuggestion(Number(b.dataset.i));
+});
 function swallowNextClick() {
   const eat = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
   document.addEventListener('click', eat, { capture: true, once: true });
@@ -729,8 +802,17 @@ function handleShare() {
     return;
   }
   state.activeField = 'to';
+  if (shared.needsCoords) {
+    // Show what came in, so a share format we don't know yet can be reported and handled.
+    showSuggestions([pasteRow(), pickRow()], `${SHORT_LINK_HELP}\n\nYang dikirim: ${shared.raw.replace(/\s*\n\s*/g, " · ").slice(0, 160)}`);
+    return;
+  }
   els.to.value = shared.query;
-  showSuggestions(actionRows(shared.query), `Nyari "${shared.query}" dari Google Maps…`);
+  if (shared.approx) approxShare = shared.query;
+  const note = shared.approx
+    ? `Pin tanpa nama, cuma "dekat ${shared.query}": hasilnya kira-kira aja. Biar pas, tempel koordinatnya.`
+    : `Nyari "${shared.query}" dari Google Maps…`;
+  showSuggestions([...(shared.approx ? [pasteRow()] : []), ...actionRows(shared.query)], note);
   runSearch('to', shared.query);
 }
 handleShare();

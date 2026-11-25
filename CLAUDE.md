@@ -90,6 +90,18 @@ challenge weak assumptions and say plainly when something is unverified.
   strip "No. 6"/RT/RW, rerank by distance from the GPS fix, dedupe street pieces. Nominatim
   ("Cari lebih teliti") only on tap: its policy forbids search-as-you-type.
 - Android share target (manifest `share_target`): Google Maps → Bagikan → Jalur fills the destination.
+- Shareloc of a nameless pin (a house in a perumahan) may arrive as only a `maps.app.goo.gl` short
+  link: no coordinates, and a browser can't open it (cross-origin redirect). Jalur then says so,
+  shows the raw shared text ("Yang dikirim: …") and offers "Tempel koordinat" (clipboard, read on
+  click: a touch pointerdown isn't a user activation). "Near/Dekat Jl. X" is searched but flagged
+  as rough. Decimal-comma coordinates ("-6,30, 106,65") are read too. UNVERIFIED: what Google Maps
+  on the owner's phone really sends for a dropped pin; the raw text on screen will tell. A
+  short-link resolver would need a server (e.g. a Cloudflare Worker): only if this is common.
+- WhatsApp location bubbles can't be shared to other apps; they open Google Maps, share from there.
+- Traffic ("Macet" button, Google map only, `jalur.traffic`): Google's `TrafficLayer` (live,
+  car speeds; motors filter through). With it on, routes are drawn as see-through bands so the
+  traffic colour of the road underneath stays readable; road-size colours return when it's off.
+  Gives no minutes. Real traffic minutes would need the Routes API (separate SKU, not enabled).
 - The Maps link sends the destination as coordinates, so Google labels it with the nearest shop
   (picked "Living World", Google showed "Sociolla Living World"). Same spot; a name string would be
   ambiguous ("Indomaret, Tangerang").

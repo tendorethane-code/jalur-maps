@@ -10,6 +10,8 @@ node test/e2e/qa.cjs --osm                     # all main flows on the OSM fallb
 node test/e2e/qa.cjs                           # same on Google: ~10 map loads + Places searches
 node test/e2e/qa.cjs https://tendorethane-code.github.io/jalur-maps/   # the live site
 node test/e2e/ghost.cjs                        # the "jumped to the fallback map" ghost tap
+node test/e2e/share.cjs                        # shareloc short link, paste coordinates (OSM)
+node test/e2e/share.cjs --google               # + the traffic toggle (2 Google map loads, no Places)
 ```
 
 Screenshots go to `$OUT` (default: the OS temp dir). In the agent sandbox, launch Chromium
