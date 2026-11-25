@@ -49,6 +49,9 @@ export function parseCoordinates(text) {
     /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/, // place pages: most exact
     /[?&](?:q|query|destination|ll|center)=(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/,
     /@(-?\d+\.\d+),(-?\d+\.\d+)/,
+    // Android map intents (WhatsApp location -> Jalur APK): "geo:-6.17,106.71" ("geo:0,0?q=..." is
+    // caught by the q= pattern above, or falls through as 0,0 outside Jabodetabek).
+    /\bgeo:(-?\d+\.\d+),(-?\d+\.\d+)/,
     /^\s*(-?\d{1,2}\.\d{3,})\s*[, ]\s*(-?\d{2,3}\.\d{3,})\s*$/m,
     // Decimal commas, as an Indonesian phone may write them: "-6,301234, 106,652100".
     /^\s*(-?\d{1,2},\d{3,})\s*[,; ]\s*(-?\d{2,3},\d{3,})\s*$/m,
@@ -101,6 +104,18 @@ const PIN_LABEL = /^(dropped pin|pin (lokasi|yang dilepas|dilepas|yang dijatuhka
  */
 export function parseShared({ title = '', text = '', url = '' } = {}) {
   const all = [title, text, url].filter(Boolean).join('\n');
+  // A geo: URI from the Android app ("geo:-6.17,106.71?q=-6.17,106.71(Rumah Budi)" or
+  // "geo:0,0?q=Jl. Mawar 5, Jakarta"): coordinates win, else the q= text is the search.
+  const geo = all.match(/\bgeo:[^\n]+/);
+  if (geo) {
+    const point = parseCoordinates(geo[0]);
+    let q = '';
+    try { q = decodeURIComponent((geo[0].match(/[?&]q=([^&]*)/) || [])[1] || '').replace(/\+/g, ' '); } catch { /* keep '' */ }
+    const label = (q.match(/\(([^)]+)\)\s*$/) || [])[1] || '';
+    q = q.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    if (point) return { point, name: label };
+    if (q && !/^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(q)) return { query: q, address: '' };
+  }
   const point = parseCoordinates(all);
   // Links on their own line: a one-line text field glues "Stasiun Tebet" and the link together.
   const raw = all.replace(/https?:\/\/\S+/g, '\n').split(/\n+/).map((l) => l.trim()).filter(Boolean);

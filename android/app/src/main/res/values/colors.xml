@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- theme-color of the site (index.html), light and dark. -->
+    <color name="bar_light">#F3F4F8</color>
+    <color name="bar_dark">#12141A</color>
+    <!-- Corner colour of public/icons/icon-maskable-512.png, behind the adaptive icon. -->
+    <color name="icon_background">#3B46B8</color>
+</resources>

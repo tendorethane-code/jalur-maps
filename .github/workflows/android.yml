@@ -1,0 +1,91 @@
+# Builds the Jalur APK (android/) signed with the release key from repo secrets.
+# - Any push that touches android/: build + checks, APK kept as a workflow artifact (7 days).
+# - Tag apk-vX.Y.Z (must equal versionName): also publishes a GitHub Release with the APK and
+#   its SHA-256. A tag with a suffix (apk-v1.0.0-uji1) is marked pre-release.
+# An installed APK can't be withdrawn: tag only after /cek-rilis and the owner's GO.
+name: Android APK
+
+on:
+  push:
+    branches: ['**']
+    tags: ['apk-v*']
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Signing key from secrets
+        env:
+          KEY_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEY_B64" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Secret ANDROID_KEYSTORE_BASE64 or ANDROID_KEYSTORE_PASSWORD is missing (Settings -> Secrets and variables -> Actions)."
+            exit 1
+          fi
+          echo "$KEY_B64" | base64 -d > "$RUNNER_TEMP/jalur.p12"
+          echo "JALUR_KEYSTORE=$RUNNER_TEMP/jalur.p12" >> "$GITHUB_ENV"
+
+      - name: Build
+        working-directory: android
+        env:
+          JALUR_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: gradle --no-daemon assembleRelease
+
+      - name: Check signature, versions and assetlinks.json
+        run: |
+          set -e
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          # The key must be the one .well-known/assetlinks.json vouches for, or the app shows an address bar.
+          EXPECTED=c9f35defedf0e07d8a4875d504a09b0609043c62bd70554acb6acd11bbf325d3
+          "$BT/apksigner" verify --print-certs "$APK" | tee certs.txt
+          grep -q "SHA-256 digest: $EXPECTED" certs.txt || { echo "::error::APK is not signed with the Jalur release key"; exit 1; }
+          curl -fsS https://tendorethane-code.github.io/.well-known/assetlinks.json | tr -d ' \n' \
+            | grep -qi "$(echo $EXPECTED | sed 's/../&:/g; s/:$//')" || { echo "::error::assetlinks.json does not list this key"; exit 1; }
+          VERSION=$(sed -n "s/.*versionName '\(.*\)'.*/\1/p" android/app/build.gradle)
+          CODE=$(sed -n 's/.*versionCode \([0-9]*\).*/\1/p' android/app/build.gradle)
+          "$BT/aapt2" dump badging "$APK" | head -1
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG_VERSION=${GITHUB_REF_NAME#apk-v}
+            [ "${TAG_VERSION%%-*}" = "$VERSION" ] || { echo "::error::Tag $GITHUB_REF_NAME does not match versionName $VERSION"; exit 1; }
+          fi
+          NAME="jalur-$VERSION.apk"
+          cp "$APK" "$NAME"
+          sha256sum "$NAME" | tee "$NAME.sha256"
+          echo "APK_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "APK_VERSION=$VERSION ($CODE)" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jalur-apk
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.APK_NAME }}.sha256
+          retention-days: 7
+
+      - name: GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/apk-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=""
+          [[ "$GITHUB_REF_NAME" == *-* ]] && PRE="--prerelease"
+          SUM=$(cut -d' ' -f1 "$APK_NAME.sha256")
+          printf 'Jalur untuk Android, versi %s.\n\nCara pasang: unduh `%s` di HP, buka, izinkan "Instal aplikasi tak dikenal" buat browser/file manager-nya.\n\nSHA-256: `%s`\n' \
+            "$APK_VERSION" "$APK_NAME" "$SUM" > notes.md
+          gh release create "$GITHUB_REF_NAME" "$APK_NAME" "$APK_NAME.sha256" --title "Jalur $GITHUB_REF_NAME" --notes-file notes.md $PRE

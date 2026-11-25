@@ -107,3 +107,11 @@ test('placeFromMapsUrl reads the place name from a resolved Google Maps link', (
   assert.equal(placeFromMapsUrl('https://www.google.com/maps?q=-6.17,106.71'), null);
   assert.equal(shortMapsLink('cek http://maps.app.goo.gl/abc ya'), 'https://maps.app.goo.gl/abc');
 });
+
+test('parseShared reads geo: URIs (WhatsApp location opened with the Jalur APK)', () => {
+  assert.deepEqual(parseShared({ text: 'geo:-6.1788,106.7098' }), { point: [-6.1788, 106.7098], name: '' });
+  assert.deepEqual(parseShared({ text: 'geo:-6.1788,106.7098?q=-6.1788,106.7098(Rumah Budi)' }), { point: [-6.1788, 106.7098], name: 'Rumah Budi' });
+  assert.deepEqual(parseShared({ text: 'geo:0,0?q=-6.1788,106.7098(Rumah%20Budi)' }), { point: [-6.1788, 106.7098], name: 'Rumah Budi' });
+  assert.deepEqual(parseShared({ text: 'geo:0,0?q=Jl.+Mawar+5,+Jakarta' }), { query: 'Jl. Mawar 5, Jakarta', address: '' });
+  assert.deepEqual(parseCoordinates('geo:-6.1788,106.7098?z=17'), [-6.1788, 106.7098]);
+});

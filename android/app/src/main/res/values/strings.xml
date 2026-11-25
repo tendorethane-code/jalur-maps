@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Jalur</string>
+    <string name="asset_statements" translatable="false">
+        [{
+            \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+            \"target\": {\"namespace\": \"web\", \"site\": \"https://tendorethane-code.github.io\"}
+        }]
+    </string>
+    <!-- Same as share_target in public/manifest.webmanifest. -->
+    <string name="share_target" translatable="false">
+        {
+            \"action\": \"https://tendorethane-code.github.io/jalur-maps/\",
+            \"method\": \"GET\",
+            \"params\": {\"title\": \"title\", \"text\": \"text\", \"url\": \"url\"}
+        }
+    </string>
+</resources>

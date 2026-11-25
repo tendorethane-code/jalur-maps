@@ -1,0 +1,60 @@
+// Jalur for Android: a Trusted Web Activity around the live site, so it opens full screen
+// (no address bar) once the site's .well-known/assetlinks.json vouches for this signing key.
+// Native extras: WhatsApp / map-app locations (geo: links) and text shared from Google Maps both
+// open Jalur with that place as the destination; the web app does the parsing (lib/search.js).
+plugins {
+    id 'com.android.application'
+}
+
+def appUrl = 'https://tendorethane-code.github.io/jalur-maps/'
+def keystore = System.getenv('JALUR_KEYSTORE')
+def keystorePassword = System.getenv('JALUR_KEYSTORE_PASSWORD')
+
+android {
+    namespace 'io.github.tendorethane_code.jalur'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'io.github.tendorethane_code.jalur'
+        minSdk 24
+        targetSdk 35
+        // Bump both for every release: Android refuses to update to the same versionCode.
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'APP_URL', "\"${appUrl}\""
+        manifestPlaceholders = [appUrl: appUrl, appHost: 'tendorethane-code.github.io']
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            // Only from the environment (CI secrets). Never commit the key.
+            if (keystore) {
+                storeFile file(keystore)
+                storePassword keystorePassword
+                keyAlias 'jalur'
+                keyPassword keystorePassword
+                storeType 'pkcs12'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystore ? signingConfigs.release : null
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.4'
+}

@@ -42,23 +42,38 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
 - Always: `npm test`; `node test/e2e/qa.cjs --osm` for UI changes (Google run only if the map or
   Google search changed: quota); `CACHE` bumped if shell files changed; 320–390 px, dark, ≥900 px.
 - [luar], owner only: taps and long-press on the Android phone; the Maps link opening Google Maps.
-- Not relevant here (until the APK ships): DB backup/migration, installers, checksums, signing.
+- Web releases: DB backup/migration, installers, checksums, signing are not relevant. APK releases
+  (tag `apk-v*`): signing key, SHA-256, versionCode bump and an owner phone test ARE relevant.
 - Deploy: configure-pages@v6, upload-pages-artifact@v5, deploy-pages@v5 (PR #2, run #15 green).
   On 2026-11-25 the old set (deploy-pages@v4 + upload-pages-artifact@v3) failed every run with
   "No artifacts named github-pages". Re-running a failed run doesn't help: the old artifact is
   still there, so deploy finds 2 and refuses. Start a new run (workflow_dispatch) instead.
   checkout/setup-node are still @v4 (Node 20, forced onto Node 24 with a warning; works).
 
-## APK (planned, not built yet)
-- TWA wrapper of the live site + a `geo:` intent filter (WhatsApp location -> Jalur). Package
+## APK (`android/`)
+- Trusted Web Activity around the live site: `JalurLauncherActivity` extends android-browser-helper's
+  `LauncherActivity` (2.7.4; needs compileSdk 36, targetSdk 35, minSdk 24). Package
   `io.github.tendorethane_code.jalur`. Signing key SHA-256
   `C9:F3:5D:EF:ED:F0:E0:7D:8A:48:75:D5:04:A0:9B:06:09:04:3C:62:BD:70:55:4A:CB:6A:CD:11:BB:F3:25:D3`.
+- No logic in Java: a `geo:` link (WhatsApp location -> "Open with" -> Jalur) becomes
+  `/jalur-maps/?text=<geo URI>` via `getProtocolHandlers()`, and text shared to the app goes
+  through the library's share target (same params as the PWA). The web parses both
+  (`parseShared` reads geo: URIs). Links to the site itself open in the app (autoVerify).
+- `LauncherActivity` only uses an https intent URL if trusted (same origin, a BROWSABLE filter for
+  the host, or ADDITIONAL_TRUSTED_ORIGINS); ours is the default origin with such a filter.
+- No launchMode on the activity (as Bubblewrap): singleTask would swallow a new geo: intent while
+  the app is open.
 - Key in repo secrets `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` (alias `jalur`,
-  PKCS12, the same password for store and key), backed up offline by the owner. Never commit it
-  (`.gitignore`).
-- Verification file: `.well-known/assetlinks.json` in the repo `tendorethane-code/tendorethane-code.github.io`
-  (user site; its README has the rules and a checklist). The APK goes to this repo's Releases,
-  with a SHA-256 checksum. An installed APK can't be withdrawn: the release check is stricter.
+  PKCS12, same password for store and key), backed up offline by the owner. Never commit it.
+- CI `.github/workflows/android.yml`: any push touching `android/` builds a signed APK (artifact),
+  checks the key against the expected fingerprint and the live assetlinks.json. Tag
+  `apk-vX.Y.Z` (= versionName; suffix like `-uji1` = pre-release) publishes a GitHub Release with
+  the APK and SHA-256. An installed APK can't be withdrawn: tag only after /cek-rilis + GO.
+  Bump versionCode and versionName for every release.
+- Local build: Android SDK (platforms 36, build-tools 36) + `/opt/gradle-8.14.3/bin/gradle` in
+  `android/`, `JALUR_KEYSTORE`/`JALUR_KEYSTORE_PASSWORD` env for a signed build.
+- Verification file: `.well-known/assetlinks.json` in `tendorethane-code/tendorethane-code.github.io`
+  (user site; its README has the rules and a checklist).
 
 ## Gotchas
 - Google map is forced to `renderingType: RASTER` (vector needs WebGL). Dark mode = `colorScheme`.

@@ -175,6 +175,14 @@ async function page(b, { google = false, query = '', width, resolver } = {}) {
   check('No page errors (real resolver)', !p.errors.length, p.errors.join(' | '));
   await ctx.close();
 
+  // 13. What the APK opens for a WhatsApp location: ?text=<Uri.encode(geo: URI)>.
+  ({ p, cdp, ctx } = await page(b, { query: '?text=' + encodeURIComponent('geo:-6.2405,106.6537?q=-6.2405,106.6537(Rumah Budi)') }));
+  await p.waitForFunction(() => document.getElementById('to').value, null, { timeout: 15000 }).catch(() => {});
+  const geoTo = await p.evaluate(() => JSON.parse(sessionStorage.getItem('jalur.trip') || '{}').to?.point || null);
+  check('APK geo: link sets the destination', JSON.stringify(geoTo) === '[-6.2405,106.6537]', JSON.stringify(geoTo));
+  check('No page errors (geo)', !p.errors.length, p.errors.join(' | '));
+  await ctx.close();
+
   // 7. Google: traffic toggle, routes become see-through bands, choice remembered.
   if (GOOGLE) {
     ({ p, cdp, ctx } = await page(b, { google: true, query: '?text=' + encodeURIComponent('-6.2405,106.6537') }));

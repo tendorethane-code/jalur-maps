@@ -5,7 +5,8 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md']
+    # The APK (android.yml) and the Cloudflare resolver (deployed by hand) don't change the site.
+    paths-ignore: ['**.md', 'android/**', '.github/workflows/android.yml', 'resolver/**']
   workflow_dispatch:
 
 permissions:
