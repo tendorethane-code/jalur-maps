@@ -37,13 +37,21 @@ jobs:
             echo "::error::Secret ANDROID_KEYSTORE_BASE64 or ANDROID_KEYSTORE_PASSWORD is missing (Settings -> Secrets and variables -> Actions)."
             exit 1
           fi
-          echo "$KEY_B64" | base64 -d > "$RUNNER_TEMP/jalur.p12"
+          printf '%s' "$KEY_B64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/jalur.p12" \
+            || { echo "::error::ANDROID_KEYSTORE_BASE64 is not valid base64: paste the whole keystore-base64.txt."; exit 1; }
+          # Pasting on a phone easily adds a space or line break at the ends: drop those.
+          PW=$(printf '%s' "$KEY_PASSWORD" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          echo "::add-mask::$PW"
+          # Fail here, with a clear message, rather than deep inside the Gradle build.
+          if ! keytool -list -storetype pkcs12 -keystore "$RUNNER_TEMP/jalur.p12" -storepass "$PW" -alias jalur > /dev/null 2>&1; then
+            echo "::error::ANDROID_KEYSTORE_PASSWORD does not open the key. Paste only the password itself (one line, nothing else)."
+            exit 1
+          fi
           echo "JALUR_KEYSTORE=$RUNNER_TEMP/jalur.p12" >> "$GITHUB_ENV"
+          echo "JALUR_KEYSTORE_PASSWORD=$PW" >> "$GITHUB_ENV"
 
       - name: Build
         working-directory: android
-        env:
-          JALUR_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: gradle --no-daemon assembleRelease
 
       - name: Check signature, versions and assetlinks.json
