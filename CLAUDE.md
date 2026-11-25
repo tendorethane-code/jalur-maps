@@ -62,12 +62,16 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
   (`parseShared` reads geo: URIs). Links to the site itself open in the app (autoVerify).
 - `LauncherActivity` only uses an https intent URL if trusted (same origin, a BROWSABLE filter for
   the host, or ADDITIONAL_TRUSTED_ORIGINS); ours is the default origin with such a filter.
-- apk-v1.0.0-uji1 crashed at launch on the owner's phone ("Jalur mogok", Android system notice).
-  Not reproduced here: no KVM for an emulator; Robolectric launch tests (`android/app/src/test`,
-  icon/geo/share, also with a fake TWA-capable Chrome) pass. So uji2 adds a crash reporter:
-  `JalurApp` records any uncaught exception (from attachBaseContext, before providers) to
-  files/last-crash.txt, and the next launch shows `CrashReportActivity` (text + "Salin" + "Coba
-  buka lagi") instead of the site. Read the owner's copied report before guessing a fix.
+- uji1/uji2 crashed at launch on the owner's Infinix X6851B (Android 15): LauncherActivity.launchTwa
+  -> ManageDataLauncherActivity.addSiteSettingsShortcut -> setComponentEnabledSetting on
+  `ManageDataLauncherActivity`, which wasn't declared ("Component class ... does not exist").
+  Bubblewrap's template declares it (+ `manageSpaceActivity`, MANAGE_SPACE_URL); so does ours since
+  uji3. Robolectric doesn't validate that call, so `LaunchTest.libraryComponentsAreDeclared`
+  checks the declaration (fails without the fix). No emulator here (no KVM).
+- Crash reporter (since uji2): `JalurApp` records any uncaught exception (from attachBaseContext,
+  before providers) to files/last-crash.txt; the launcher also catches its own onCreate. The next
+  launch shows `CrashReportActivity` (text + "Salin" + "Coba buka lagi"). That is how the uji2 crash
+  was found: ask the owner for the copied report before guessing.
 - No launchMode on the activity (as Bubblewrap): singleTask would swallow a new geo: intent while
   the app is open.
 - Key in repo secrets `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` (alias `jalur`,

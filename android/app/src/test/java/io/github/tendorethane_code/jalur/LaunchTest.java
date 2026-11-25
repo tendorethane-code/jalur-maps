@@ -61,4 +61,20 @@ public class LaunchTest {
         buttons.getChildAt(1).performClick();
         assertFalse(CrashReport.exists(app));
     }
+
+    /**
+     * LauncherActivity calls setComponentEnabledSetting on these every launch; on a real phone an
+     * undeclared one crashes the app (uji1/uji2), while Robolectric doesn't check. So check here.
+     */
+    @Test
+    public void libraryComponentsAreDeclared() throws Exception {
+        android.app.Application app = org.robolectric.RuntimeEnvironment.getApplication();
+        for (String name : new String[] {
+                "com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity",
+                "io.github.tendorethane_code.jalur.CrashReportActivity",
+        }) {
+            assertNotNull(name, app.getPackageManager().getActivityInfo(
+                    new android.content.ComponentName(app.getPackageName(), name), 0));
+        }
+    }
 }

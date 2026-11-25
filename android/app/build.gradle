@@ -19,7 +19,7 @@ android {
         minSdk 24
         targetSdk 35
         // Bump both for every release: Android refuses to update to the same versionCode.
-        versionCode 2
+        versionCode 3
         versionName '1.0.0'
         buildConfigField 'String', 'APP_URL', "\"${appUrl}\""
         manifestPlaceholders = [appUrl: appUrl, appHost: 'tendorethane-code.github.io']
