@@ -43,10 +43,11 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
   Google search changed: quota); `CACHE` bumped if shell files changed; 320–390 px, dark, ≥900 px.
 - [luar], owner only: taps and long-press on the Android phone; the Maps link opening Google Maps.
 - Not relevant here (until the APK ships): DB backup/migration, installers, checksums, signing.
-- Deploy uses the Pages actions at checkout@v6, setup-node@v6, configure-pages@v6,
-  upload-pages-artifact@v5, deploy-pages@v5. On 2026-11-25 the old set (deploy-pages@v4 with
-  upload-pages-artifact@v3) failed every run: "No artifacts named github-pages". Re-running a
-  failed run doesn't help either: the old artifact is still there, so it finds 2 and refuses.
+- Deploy: configure-pages@v6, upload-pages-artifact@v5, deploy-pages@v5 (PR #2, run #15 green).
+  On 2026-11-25 the old set (deploy-pages@v4 + upload-pages-artifact@v3) failed every run with
+  "No artifacts named github-pages". Re-running a failed run doesn't help: the old artifact is
+  still there, so deploy finds 2 and refuses. Start a new run (workflow_dispatch) instead.
+  checkout/setup-node are still @v4 (Node 20, forced onto Node 24 with a warning; works).
 
 ## APK (planned, not built yet)
 - TWA wrapper of the live site + a `geo:` intent filter (WhatsApp location -> Jalur). Package
