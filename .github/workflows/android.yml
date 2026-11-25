@@ -68,7 +68,8 @@ jobs:
 
       - name: Build
         working-directory: android
-        run: gradle --no-daemon assembleRelease
+        # Launch tests (Robolectric) first: icon, geo: link, share, crash report.
+        run: gradle --no-daemon testReleaseUnitTest assembleRelease
 
       - name: Check signature, versions and assetlinks.json
         env:

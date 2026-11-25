@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
+        android:name=".JalurApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -74,6 +75,12 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <!-- Shown on the launch after a crash (see CrashReport). -->
+        <activity
+            android:name=".CrashReportActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@android:style/Theme.Material.Light" />
     </application>
 
     <queries>
