@@ -42,7 +42,22 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
 - Always: `npm test`; `node test/e2e/qa.cjs --osm` for UI changes (Google run only if the map or
   Google search changed: quota); `CACHE` bumped if shell files changed; 320–390 px, dark, ≥900 px.
 - [luar], owner only: taps and long-press on the Android phone; the Maps link opening Google Maps.
-- Not relevant here: DB backup/migration, installers, checksums, signing.
+- Not relevant here (until the APK ships): DB backup/migration, installers, checksums, signing.
+- Deploy uses the Pages actions at checkout@v6, setup-node@v6, configure-pages@v6,
+  upload-pages-artifact@v5, deploy-pages@v5. On 2026-11-25 the old set (deploy-pages@v4 with
+  upload-pages-artifact@v3) failed every run: "No artifacts named github-pages". Re-running a
+  failed run doesn't help either: the old artifact is still there, so it finds 2 and refuses.
+
+## APK (planned, not built yet)
+- TWA wrapper of the live site + a `geo:` intent filter (WhatsApp location -> Jalur). Package
+  `io.github.tendorethane_code.jalur`. Signing key SHA-256
+  `C9:F3:5D:EF:ED:F0:E0:7D:8A:48:75:D5:04:A0:9B:06:09:04:3C:62:BD:70:55:4A:CB:6A:CD:11:BB:F3:25:D3`.
+- Key in repo secrets `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` (alias `jalur`,
+  PKCS12, the same password for store and key), backed up offline by the owner. Never commit it
+  (`.gitignore`).
+- Verification file: `.well-known/assetlinks.json` in the repo `tendorethane-code/tendorethane-code.github.io`
+  (user site; its README has the rules and a checklist). The APK goes to this repo's Releases,
+  with a SHA-256 checksum. An installed APK can't be withdrawn: the release check is stricter.
 
 ## Gotchas
 - Google map is forced to `renderingType: RASTER` (vector needs WebGL). Dark mode = `colorScheme`.

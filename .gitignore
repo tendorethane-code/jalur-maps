@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+# Signing keys never go in git
+*.p12
+*.jks
+*.keystore
