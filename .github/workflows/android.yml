@@ -123,7 +123,10 @@ jobs:
           PRE=""
           [[ "$RELEASE" == *-* ]] && PRE="--prerelease"
           SUM=$(cut -d' ' -f1 "$APK_NAME.sha256")
-          printf 'Jalur untuk Android, versi %s.\n\nCara pasang: unduh `%s` di HP, buka, izinkan "Instal aplikasi tak dikenal" buat browser/file manager-nya.\n\nSHA-256: `%s`\n' \
+          # Also as jalur.apk: a fixed name, so .../releases/latest/download/jalur.apk always gives
+          # the newest official release (pre-releases are never "latest"). Same bytes, same SHA-256.
+          cp "$APK_NAME" jalur.apk
+          printf 'Jalur untuk Android, versi %s.\n\nCara pasang: unduh `jalur.apk` di HP, buka, izinkan "Instal aplikasi tak dikenal" buat browser/file manager-nya. Bisa dipasang di atas versi sebelumnya.\n\n`jalur.apk` dan `%s` file yang sama. SHA-256: `%s`\n' \
             "$APK_VERSION" "$APK_NAME" "$SUM" > notes.md
           # Creates the tag at this commit when it doesn't exist yet (manual run); fails if the release exists.
-          gh release create "$RELEASE" "$APK_NAME" "$APK_NAME.sha256" --target "$GITHUB_SHA" --title "Jalur $RELEASE" --notes-file notes.md $PRE
+          gh release create "$RELEASE" jalur.apk "$APK_NAME" "$APK_NAME.sha256" --target "$GITHUB_SHA" --title "Jalur $RELEASE" --notes-file notes.md $PRE

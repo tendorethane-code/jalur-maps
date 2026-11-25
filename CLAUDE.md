@@ -84,11 +84,14 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
   run_workflow with inputs); gh creates the tag at that commit. Only from main, tag format and
   version are checked. An installed APK can't be withdrawn: release only after /cek-rilis + GO.
   Bump versionCode and versionName for every release.
-- TODO at the first official release (`apk-v1.0.0`, owner agreed): publish the APK as `jalur.apk`
-  (fixed name, keep the versioned copy too if useful) so
-  `https://github.com/tendorethane-code/jalur-maps/releases/latest/download/jalur.apk` always
-  points at the newest release (pre-releases don't count as latest), and link it from the
-  landing page in `tendorethane-code.github.io`. Then mark this done.
+- Every release also carries `jalur.apk` (same bytes as `jalur-X.Y.Z.apk`), so
+  `https://github.com/tendorethane-code/jalur-maps/releases/latest/download/jalur.apk` is the
+  newest official release (pre-releases are never "latest"); the landing page in
+  `tendorethane-code.github.io` links it. Before apk-v1.0.0 that link is a 404.
+- Phone test of apk-v1.0.0-uji3 (owner, Infinix X6851B, Android 15): opens without crashing,
+  full screen (assetlinks verified, no address bar), WhatsApp location -> Jalur and Google Maps
+  share -> Jalur both fill the destination. Chrome's one-time "Berjalan di Chrome" notice is
+  expected for a TWA and can't be turned off from the app.
 - Local build: Android SDK (platforms 36, build-tools 36) + `/opt/gradle-8.14.3/bin/gradle` in
   `android/`, `JALUR_KEYSTORE`/`JALUR_KEYSTORE_PASSWORD` env for a signed build.
 - Verification file: `.well-known/assetlinks.json` in `tendorethane-code/tendorethane-code.github.io`
