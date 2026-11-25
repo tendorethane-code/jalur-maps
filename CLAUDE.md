@@ -67,9 +67,12 @@ The general protocol is `.claude/skills/cek-rilis/SKILL.md` (same file in every 
 - Key in repo secrets `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` (alias `jalur`,
   PKCS12, same password for store and key), backed up offline by the owner. Never commit it.
 - CI `.github/workflows/android.yml`: any push touching `android/` builds a signed APK (artifact),
-  checks the key against the expected fingerprint and the live assetlinks.json. Tag
+  checks the key against the expected fingerprint and the live assetlinks.json. A release
   `apk-vX.Y.Z` (= versionName; suffix like `-uji1` = pre-release) publishes a GitHub Release with
-  the APK and SHA-256. An installed APK can't be withdrawn: tag only after /cek-rilis + GO.
+  the APK and SHA-256. Claude's cloud sessions can't push tags (git proxy 403), so start it with
+  Actions -> Android APK -> Run workflow on main with `release_tag` (the GitHub tool's
+  run_workflow with inputs); gh creates the tag at that commit. Only from main, tag format and
+  version are checked. An installed APK can't be withdrawn: release only after /cek-rilis + GO.
   Bump versionCode and versionName for every release.
 - Local build: Android SDK (platforms 36, build-tools 36) + `/opt/gradle-8.14.3/bin/gradle` in
   `android/`, `JALUR_KEYSTORE`/`JALUR_KEYSTORE_PASSWORD` env for a signed build.

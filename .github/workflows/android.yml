@@ -1,8 +1,11 @@
 # Builds the Jalur APK (android/) signed with the release key from repo secrets.
 # - Any push that touches android/: build + checks, APK kept as a workflow artifact (7 days).
-# - Tag apk-vX.Y.Z (must equal versionName): also publishes a GitHub Release with the APK and
-#   its SHA-256. A tag with a suffix (apk-v1.0.0-uji1) is marked pre-release.
-# An installed APK can't be withdrawn: tag only after /cek-rilis and the owner's GO.
+# - Release apk-vX.Y.Z (must equal versionName): publishes a GitHub Release with the APK and its
+#   SHA-256; a suffix (apk-v1.0.0-uji1) makes it a pre-release. Two ways to start one:
+#   - Actions -> Android APK -> Run workflow on main, release_tag = apk-v1.0.0 (GitHub makes the tag;
+#     Claude's cloud sessions can't push tags: the git proxy answers 403), or
+#   - push the tag yourself.
+# An installed APK can't be withdrawn: release only after /cek-rilis and the owner's GO.
 name: Android APK
 
 on:
@@ -11,6 +14,11 @@ on:
     tags: ['apk-v*']
     paths: ['android/**', '.github/workflows/android.yml']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Publish a release, e.g. apk-v1.0.0 or apk-v1.0.0-uji1 (empty = build only)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -63,6 +71,8 @@ jobs:
         run: gradle --no-daemon assembleRelease
 
       - name: Check signature, versions and assetlinks.json
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -e
           APK=android/app/build/outputs/apk/release/app-release.apk
@@ -76,9 +86,19 @@ jobs:
           VERSION=$(sed -n "s/.*versionName '\(.*\)'.*/\1/p" android/app/build.gradle)
           CODE=$(sed -n 's/.*versionCode \([0-9]*\).*/\1/p' android/app/build.gradle)
           "$BT/aapt2" dump badging "$APK" | head -1
+          # Which release, if any: a pushed tag, or the release_tag of a manual run on main.
+          TAG=""
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            TAG_VERSION=${GITHUB_REF_NAME#apk-v}
-            [ "${TAG_VERSION%%-*}" = "$VERSION" ] || { echo "::error::Tag $GITHUB_REF_NAME does not match versionName $VERSION"; exit 1; }
+            TAG=$GITHUB_REF_NAME
+          elif [ -n "$RELEASE_TAG" ]; then
+            [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Releases come from main only (this run is on $GITHUB_REF)."; exit 1; }
+            TAG=$RELEASE_TAG
+          fi
+          if [ -n "$TAG" ]; then
+            [[ "$TAG" =~ ^apk-v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9]+)?$ ]] || { echo "::error::Release tag '$TAG' must look like apk-v1.2.3 or apk-v1.2.3-uji1"; exit 1; }
+            TAG_VERSION=${TAG#apk-v}
+            [ "${TAG_VERSION%%-*}" = "$VERSION" ] || { echo "::error::Tag $TAG does not match versionName $VERSION"; exit 1; }
+            echo "RELEASE=$TAG" >> "$GITHUB_ENV"
           fi
           NAME="jalur-$VERSION.apk"
           cp "$APK" "$NAME"
@@ -94,14 +114,15 @@ jobs:
             ${{ env.APK_NAME }}.sha256
           retention-days: 7
 
-      - name: GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/apk-v')
+      - name: GitHub Release
+        if: env.RELEASE != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           PRE=""
-          [[ "$GITHUB_REF_NAME" == *-* ]] && PRE="--prerelease"
+          [[ "$RELEASE" == *-* ]] && PRE="--prerelease"
           SUM=$(cut -d' ' -f1 "$APK_NAME.sha256")
           printf 'Jalur untuk Android, versi %s.\n\nCara pasang: unduh `%s` di HP, buka, izinkan "Instal aplikasi tak dikenal" buat browser/file manager-nya.\n\nSHA-256: `%s`\n' \
             "$APK_VERSION" "$APK_NAME" "$SUM" > notes.md
-          gh release create "$GITHUB_REF_NAME" "$APK_NAME" "$APK_NAME.sha256" --title "Jalur $GITHUB_REF_NAME" --notes-file notes.md $PRE
+          # Creates the tag at this commit when it doesn't exist yet (manual run); fails if the release exists.
+          gh release create "$RELEASE" "$APK_NAME" "$APK_NAME.sha256" --target "$GITHUB_SHA" --title "Jalur $RELEASE" --notes-file notes.md $PRE
