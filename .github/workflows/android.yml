@@ -120,8 +120,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PRE=""
-          [[ "$RELEASE" == *-* ]] && PRE="--prerelease"
+          # Pre-release only for a suffix after the version (apk-v1.0.0-uji3). The "apk-v" prefix has a
+          # dash too: testing the whole tag marked apk-v1.0.0 as a pre-release, so it wasn't "latest".
+          if [[ "${RELEASE#apk-v}" == *-* ]]; then FLAGS="--prerelease"; else FLAGS="--latest"; fi
+          # Already published (e.g. run again to fix its flags): set the flags, never replace the files,
+          # whose SHA-256 is in the notes.
+          if gh release view "$RELEASE" > /dev/null 2>&1; then
+            if [ "$FLAGS" = "--latest" ]; then gh release edit "$RELEASE" --prerelease=false --latest; else gh release edit "$RELEASE" --prerelease; fi
+            echo "Release $RELEASE existed: flags set to $FLAGS, files left as they were."
+            exit 0
+          fi
           SUM=$(cut -d' ' -f1 "$APK_NAME.sha256")
           # Also as jalur.apk: a fixed name, so .../releases/latest/download/jalur.apk always gives
           # the newest official release (pre-releases are never "latest"). Same bytes, same SHA-256.
@@ -129,4 +137,4 @@ jobs:
           printf 'Jalur untuk Android, versi %s.\n\nCara pasang: unduh `jalur.apk` di HP, buka, izinkan "Instal aplikasi tak dikenal" buat browser/file manager-nya. Bisa dipasang di atas versi sebelumnya.\n\n`jalur.apk` dan `%s` file yang sama. SHA-256: `%s`\n' \
             "$APK_VERSION" "$APK_NAME" "$SUM" > notes.md
           # Creates the tag at this commit when it doesn't exist yet (manual run); fails if the release exists.
-          gh release create "$RELEASE" jalur.apk "$APK_NAME" "$APK_NAME.sha256" --target "$GITHUB_SHA" --title "Jalur $RELEASE" --notes-file notes.md $PRE
+          gh release create "$RELEASE" jalur.apk "$APK_NAME" "$APK_NAME.sha256" --target "$GITHUB_SHA" --title "Jalur $RELEASE" --notes-file notes.md $FLAGS
